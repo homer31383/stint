@@ -133,3 +133,16 @@ A "Personal" client (`__personal_client__`) and project (`__personal__`) are cre
 - **Timer state**: Active timer is stored in localStorage (`stint_timer`), not in Supabase.
 - **Undo**: Time tab has a local undo stack (not persisted). Ctrl+Z works.
 - **`flushPending()`**: Exported but is a no-op. Kept for API compatibility.
+
+## Sync history & lessons learned
+The sync layer was rewritten multiple times in the March 2026 session. Key lessons:
+- **Keep it simple**: The original "offline-first" approach (localStorage as source of truth, diffing, batched FK-ordered push queues, conditional timestamp guards, persistent deletion tracking) caused duplicates, ghost records, and stale overwrites. All of that complexity was replaced with ~130 lines: pull-replace + push-on-change.
+- **Don't diff local vs remote**: For a single-user app, comparing local and remote arrays creates race conditions. Instead, push changes as they happen (inside the `setData` updater) and let the pull fully replace local state.
+- **Deletes need immediate push**: The biggest recurring bug was deleted items reappearing. The fix was pushing `DELETE` from inside the state updater itself, not from a separate effect that could be skipped by `fromPullRef` gates.
+- **Side effects in React state updaters**: The `setData` wrapper fires Supabase calls from inside `setDataRaw(prev => ...)`. This is technically impure but is the only reliable way to diff prev/next and push immediately. It works fine in practice.
+- **`updated_at` column exists but isn't used for conflict resolution**: Migration 003 added `updated_at` to all tables. The `setData` wrapper stamps `updatedAt: Date.now()` on every changed record. This is useful metadata but the app no longer does conditional timestamp-guarded writes — simple `upsert` won.
+
+## GitHub
+- **Repo**: https://github.com/homer31383/stint (private)
+- **Remote**: `origin` → `https://github.com/homer31383/stint.git`
+- Previous repo was `homer31383/stint-ledger` (may still exist, now stale)
