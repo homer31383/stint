@@ -1,6 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { saveExpenseModel, loadExpenseModel, clearExpenseModel } from '../lib/storage';
 
+function uuid(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    const v = c === 'x' ? r : (r & 0x3) | 0x8;
+    return v.toString(16);
+  });
+}
+
 export interface RecurringExpense {
   id: string;
   name: string;
@@ -37,7 +48,7 @@ const DEFAULT_RECURRING: Omit<RecurringExpense, 'id'>[] = [
 
 function makeDefaults(): ExpenseModel {
   return {
-    recurring: DEFAULT_RECURRING.map(r => ({ ...r, id: crypto.randomUUID() })),
+    recurring: DEFAULT_RECURRING.map(r => ({ ...r, id: uuid() })),
     oneTime: [],
     lastUpdated: null,
   };
@@ -55,9 +66,20 @@ export function useExpenseModel() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const saved = await loadExpenseModel();
-      if (!cancelled && saved) {
-        setModel(saved as unknown as ExpenseModel);
+      try {
+        const saved = await loadExpenseModel();
+        if (!cancelled && saved) {
+          const parsed = saved as unknown as Partial<ExpenseModel>;
+          setModel(prev => ({
+            ...prev,
+            recurring: Array.isArray(parsed.recurring) ? parsed.recurring : prev.recurring,
+            oneTime: Array.isArray(parsed.oneTime) ? parsed.oneTime : prev.oneTime,
+            fullYearProjection: parsed.fullYearProjection ?? prev.fullYearProjection,
+            lastUpdated: parsed.lastUpdated ?? prev.lastUpdated,
+          }));
+        }
+      } catch (e) {
+        console.error('[expense-model] Failed to load from IDB:', e);
       }
       if (!cancelled) setLoaded(true);
     })();
@@ -68,7 +90,7 @@ export function useExpenseModel() {
     setModel(prev => {
       const next = {
         ...prev,
-        recurring: [...prev.recurring, { ...expense, id: crypto.randomUUID() }],
+        recurring: [...prev.recurring, { ...expense, id: uuid() }],
         lastUpdated: Date.now(),
       };
       persist(next);
@@ -104,7 +126,7 @@ export function useExpenseModel() {
     setModel(prev => {
       const next = {
         ...prev,
-        oneTime: [...prev.oneTime, { ...expense, id: crypto.randomUUID() }],
+        oneTime: [...prev.oneTime, { ...expense, id: uuid() }],
         lastUpdated: Date.now(),
       };
       persist(next);

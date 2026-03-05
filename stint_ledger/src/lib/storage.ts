@@ -133,3 +133,42 @@ export async function clearExpenseModel() {
   const db = await getDB();
   await db.delete('stint', 'expense-model');
 }
+
+export interface SettingsBlob {
+  plannerSettings: Record<string, unknown> | null;
+  retirementSettings: Record<string, unknown> | null;
+  expenseModel: Record<string, unknown> | null;
+  detailedBalances: DetailedBalances | null;
+}
+
+export async function gatherAllSettings(): Promise<SettingsBlob> {
+  const db = await getDB();
+  return {
+    plannerSettings: (await db.get('stint', 'planner-settings')) ?? null,
+    retirementSettings: (await db.get('stint', 'retirement-settings')) ?? null,
+    expenseModel: (await db.get('stint', 'expense-model')) ?? null,
+    detailedBalances: (await db.get('accounts', 'balances')) ?? null,
+  };
+}
+
+export async function applyAllSettings(blob: SettingsBlob) {
+  const db = await getDB();
+  const tx = db.transaction(['stint', 'accounts'], 'readwrite');
+  const stint = tx.objectStore('stint');
+  const accounts = tx.objectStore('accounts');
+
+  if (blob.plannerSettings != null) {
+    await stint.put(blob.plannerSettings, 'planner-settings');
+  }
+  if (blob.retirementSettings != null) {
+    await stint.put(blob.retirementSettings, 'retirement-settings');
+  }
+  if (blob.expenseModel != null) {
+    await stint.put(blob.expenseModel, 'expense-model');
+  }
+  if (blob.detailedBalances != null) {
+    await accounts.put(blob.detailedBalances, 'balances');
+  }
+
+  await tx.done;
+}

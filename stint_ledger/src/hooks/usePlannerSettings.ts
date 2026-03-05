@@ -35,9 +35,13 @@ export function usePlannerSettings(defaults: PlannerSettings) {
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const saved = await loadPlannerSettings();
-      if (!cancelled && saved) {
-        setSettings(prev => ({ ...prev, ...(saved as Partial<PlannerSettings>) }));
+      try {
+        const saved = await loadPlannerSettings();
+        if (!cancelled && saved) {
+          setSettings(prev => ({ ...prev, ...(saved as Partial<PlannerSettings>) }));
+        }
+      } catch (e) {
+        console.error('[planner-settings] Failed to load from IDB:', e);
       }
       if (!cancelled) setLoaded(true);
     })();
