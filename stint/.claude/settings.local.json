@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm install:*)",
+      "Bash(npm run:*)",
+      "Bash(mkdir:*)",
+      "Bash(mv:*)",
+      "Bash(vercel:*)",
+      "Bash(npx vercel:*)",
+      "Bash(ls:*)",
+      "Bash(echo EXIT: $?:*)",
+      "Bash(curl:*)",
+      "Bash(node:*)",
+      "Bash(python:*)"
+    ]
+  }
+}
