@@ -205,6 +205,20 @@ PC is source of truth. Push from PC, pull on phone.
 
 7. **Mobile bottom padding** — Main content uses `pb-28` to clear both the bottom tab bar and the sync bar above it.
 
+## Lessons Learned
+
+- **Never use `replace_all` on a string that also appears inside its own replacement.** The `uuid()` fallback was created by replacing all `crypto.randomUUID()` calls with `uuid()`, which also replaced the one *inside* the `uuid()` function body, creating infinite recursion. Always review the file after a `replace_all`.
+- **Mobile-specific crashes need an ErrorBoundary first, debugging second.** Without a boundary, the entire React tree unmounts and you get a blank screen with no error message. The boundary lets you read the actual error on the phone without dev tools.
+- **Supabase errors are not Error instances.** `PostgrestError` is a plain object. `catch (e) { String(e) }` produces `[object Object]`. Always check for `.message` property.
+- **`useState` initializer functions run during render.** If the initializer throws (e.g., `crypto.randomUUID()` on an unsupported browser), it crashes the component during render — not in an effect where it could be caught.
+- **Test on actual mobile after any change to hooks used by views.** Desktop and mobile can have different API availability (`crypto.randomUUID`), different IDB state (fresh vs populated), and different layout behavior.
+
+## GitHub
+
+Repository: `homer31383/stint-ledger` (private)
+Remote: `origin` → `https://github.com/homer31383/stint-ledger.git`
+Branch: `main`
+
 ## Build Commands
 
 ```bash
