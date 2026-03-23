@@ -1637,6 +1637,7 @@ function Time({ timeEntries, setTimeEntries, projects, clients, settings, active
 function Pencils({ pencils, setPencils, projects, setProjects, clients, setClients, getClient, getProject, settings, isMobile }) {
   const [showAdd, setShowAdd] = useState(false);
   const [addType, setAddType] = useState("pencil"); // "pencil" or "booking"
+  const [editPencilId, setEditPencilId] = useState(null);
   const [form, setForm] = useState({ clientId: "", projectId: "", startDate: todayISO(), endDate: todayISO(), priority: "1", notes: "", rates: {} });
   const [newClient, setNewClient] = useState("");
   const [newProj, setNewProj] = useState({ name: "", clientId: "" });
@@ -1644,20 +1645,33 @@ function Pencils({ pencils, setPencils, projects, setProjects, clients, setClien
   const [showNewProj, setShowNewProj] = useState(false);
   const [calMonth, setCalMonth] = useState(() => { const d = new Date(); return { year: d.getFullYear(), month: d.getMonth() }; });
 
-  const addEntry = () => {
+  const saveEntry = () => {
     if (!form.clientId && !form.projectId) return;
     const priority = addType === "booking" ? 0 : parseInt(form.priority);
-    // If project is set, derive clientId from it
     const clientId = form.projectId ? (getProject(form.projectId)?.clientId || form.clientId) : form.clientId;
     const rates = Object.fromEntries(Object.entries(form.rates).filter(([, v]) => v !== "" && v != null));
-    setPencils(prev => [{ id: uid(), clientId, projectId: form.projectId || null, startDate: form.startDate, endDate: form.endDate, priority, notes: form.notes, rates: Object.keys(rates).length > 0 ? rates : undefined, createdAt: Date.now() }, ...prev]);
+    const ratesVal = Object.keys(rates).length > 0 ? rates : undefined;
+    if (editPencilId) {
+      setPencils(prev => prev.map(p => p.id === editPencilId ? { ...p, clientId, projectId: form.projectId || null, startDate: form.startDate, endDate: form.endDate, priority, notes: form.notes, rates: ratesVal } : p));
+    } else {
+      setPencils(prev => [{ id: uid(), clientId, projectId: form.projectId || null, startDate: form.startDate, endDate: form.endDate, priority, notes: form.notes, rates: ratesVal, createdAt: Date.now() }, ...prev]);
+    }
     setShowAdd(false);
-    setForm({ clientId: "", projectId: "", startDate: todayISO(), endDate: todayISO(), priority: "1", notes: "", rates: {} });
+    setEditPencilId(null);
   };
 
   const openAdd = (type) => {
     setAddType(type);
+    setEditPencilId(null);
     setForm({ clientId: "", projectId: "", startDate: todayISO(), endDate: todayISO(), priority: type === "booking" ? "0" : "1", notes: "", rates: {} });
+    setShowAdd(true);
+  };
+
+  const openEdit = (p) => {
+    setEditPencilId(p.id);
+    setAddType(p.priority === 0 ? "booking" : "pencil");
+    const clientId = p.clientId || (p.projectId ? getProject(p.projectId)?.clientId : "") || "";
+    setForm({ clientId, projectId: p.projectId || "", startDate: p.startDate, endDate: p.endDate, priority: String(p.priority), notes: p.notes || "", rates: p.rates || {} });
     setShowAdd(true);
   };
 
@@ -1731,8 +1745,8 @@ function Pencils({ pencils, setPencils, projects, setProjects, clients, setClien
     const conflicts = getConflicts(p);
     const days = daysBetween(p.startDate, p.endDate);
     return (
-      <div key={p.id} style={{
-        padding: "12px 14px", background: t.white,
+      <div key={p.id} onClick={() => openEdit(p)} style={{
+        padding: "12px 14px", background: t.white, cursor: "pointer",
         border: `1px solid ${conflicts.length > 0 && p.priority <= 1 ? "rgba(197,48,48,0.3)" : t.border}`,
         borderRadius: "8px", borderLeft: `3px solid ${pri?.color || t.textTertiary}`,
       }}>
@@ -1744,7 +1758,7 @@ function Pencils({ pencils, setPencils, projects, setProjects, clients, setClien
             {fmtDateShort(p.startDate)} &ndash; {fmtDateShort(p.endDate)} ({days}d)
           </span>
           {showToggle && (
-            <>
+            <span onClick={ev => ev.stopPropagation()} style={{ display: "contents" }}>
               {p.priority > 0 ? (
                 <Btn v="green" size="sm" onClick={() => toggleBooking(p.id)}>Confirm</Btn>
               ) : (
@@ -1765,7 +1779,7 @@ function Pencils({ pencils, setPencils, projects, setProjects, clients, setClien
               )}
               <button onClick={() => setPencils(prev => prev.filter(x => x.id !== p.id))}
                 style={{ background: "none", border: "none", color: t.textTertiary, cursor: "pointer", fontSize: "16px" }}>&times;</button>
-            </>
+            </span>
           )}
         </div>
         {conflicts.length > 0 && p.priority <= 1 && <div style={{ fontSize: "11px", color: t.red, marginTop: "4px", fontWeight: 600 }}>&laquo; Conflicts with {conflicts.map(c => { const cp = c.projectId ? getProject(c.projectId) : null; return cp?.name || (c.clientId ? getClient(c.clientId)?.name : "?"); }).join(", ")}</div>}
@@ -1903,9 +1917,9 @@ function Pencils({ pencils, setPencils, projects, setProjects, clients, setClien
         </div>
       </div>
 
-      {/* Add Modal */}
+      {/* Add/Edit Modal */}
       {showAdd && (
-        <Modal title={addType === "booking" ? "New Booking" : "New Pencil"} onClose={() => { setShowAdd(false); setShowNewClient(false); setShowNewProj(false); }}>
+        <Modal title={editPencilId ? (addType === "booking" ? "Edit Booking" : "Edit Pencil") : (addType === "booking" ? "New Booking" : "New Pencil")} onClose={() => { setShowAdd(false); setEditPencilId(null); setShowNewClient(false); setShowNewProj(false); }}>
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             <Sel label="Client" value={form.clientId} onChange={v => setForm({...form, clientId: v, projectId: ""})}
               options={[{value:"",label:"Select client..."}, ...clients.map(c => ({value:c.id, label:c.name}))]} />
@@ -1967,11 +1981,20 @@ function Pencils({ pencils, setPencils, projects, setProjects, clients, setClien
                 ))}
               </div>
             </div>
-            <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "6px" }}>
-              <Btn onClick={() => setShowAdd(false)}>Cancel</Btn>
-              <Btn v="primary" onClick={addEntry} disabled={!form.clientId}>
-                {addType === "booking" ? "Add Booking" : "Add Pencil"}
-              </Btn>
+            <div style={{ display: "flex", gap: "8px", justifyContent: "space-between", alignItems: "center", marginTop: "6px" }}>
+              {editPencilId ? (
+                <button onClick={() => { setPencils(prev => prev.filter(x => x.id !== editPencilId)); setShowAdd(false); setEditPencilId(null); }}
+                  style={{ background: "none", border: "none", fontSize: "12px", color: t.textTertiary, cursor: "pointer", fontFamily: "'Instrument Sans', sans-serif" }}
+                  onMouseEnter={ev => ev.currentTarget.style.color = t.red}
+                  onMouseLeave={ev => ev.currentTarget.style.color = t.textTertiary}
+                >Delete</button>
+              ) : <div />}
+              <div style={{ display: "flex", gap: "8px" }}>
+                <Btn onClick={() => { setShowAdd(false); setEditPencilId(null); }}>Cancel</Btn>
+                <Btn v="primary" onClick={saveEntry} disabled={!form.clientId}>
+                  {editPencilId ? "Save" : addType === "booking" ? "Add Booking" : "Add Pencil"}
+                </Btn>
+              </div>
             </div>
           </div>
         </Modal>
