@@ -2774,6 +2774,9 @@ function Reports({ timeEntries, projects, clients, invoices, settings, getClient
 function Settings({ settings, setSettings, clients, projects, pencils, timeEntries, invoices, isMobile, session }) {
   const u = (k, v) => setSettings(prev => ({ ...prev, [k]: v }));
   const uRate = (k, v) => setSettings(prev => ({ ...prev, serviceRates: { ...prev.serviceRates, [k]: parseFloat(v) || 0 } }));
+  const [showRouting, setShowRouting] = useState(false);
+  const [showAccount, setShowAccount] = useState(false);
+  const maskValue = (val) => val && val.length > 4 ? "••••••" + val.slice(-4) : val;
 
   const exportData = () => {
     const data = { settings, clients, projects, pencils, timeEntries, invoices, exportedAt: new Date().toISOString() };
@@ -2799,8 +2802,22 @@ function Settings({ settings, setSettings, clients, projects, pencils, timeEntri
 
       <Card title="Bank Details">
         <Field label="Bank Name" value={settings.bankName || ""} onChange={v => u("bankName", v)} />
-        <Field label="Routing Number" value={settings.routing || ""} onChange={v => u("routing", v)} />
-        <Field label="Account Number" value={settings.accountNumber || ""} onChange={v => u("accountNumber", v)} />
+        <div style={{ position: "relative" }}>
+          <Field label="Routing Number" value={showRouting ? (settings.routing || "") : maskValue(settings.routing || "")}
+            onChange={v => u("routing", v)} readOnly={!showRouting} />
+          <button onClick={() => setShowRouting(p => !p)} style={{
+            position: "absolute", right: "8px", top: "24px", background: "none", border: "none",
+            cursor: "pointer", fontSize: "13px", color: t.textTertiary, padding: "4px 6px",
+          }}>{showRouting ? "\u{1F648}" : "\u{1F441}"}</button>
+        </div>
+        <div style={{ position: "relative" }}>
+          <Field label="Account Number" value={showAccount ? (settings.accountNumber || "") : maskValue(settings.accountNumber || "")}
+            onChange={v => u("accountNumber", v)} readOnly={!showAccount} />
+          <button onClick={() => setShowAccount(p => !p)} style={{
+            position: "absolute", right: "8px", top: "24px", background: "none", border: "none",
+            cursor: "pointer", fontSize: "13px", color: t.textTertiary, padding: "4px 6px",
+          }}>{showAccount ? "\u{1F648}" : "\u{1F441}"}</button>
+        </div>
       </Card>
 
       <Card title="Default Service Rates">
