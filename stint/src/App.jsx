@@ -2049,6 +2049,7 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, setti
                 <Tag color={st.color} bg={st.bg}>{st.label}</Tag>
                 {!isMobile && <span style={{ fontSize: "12px", color: t.textTertiary }}>{inv.lineItems?.length || 0} days</span>}
                 {!isMobile && <span style={{ fontSize: "12px", color: t.textTertiary }}>{fmtDate(inv.issueDate)}</span>}
+                {!isMobile && inv.status === "paid" && inv.paidDate && <span style={{ fontSize: "11px", color: t.green, fontWeight: 600 }}>Paid {fmtDateShort(inv.paidDate)}</span>}
                 <span style={{ marginLeft: "auto", fontSize: "16px", fontFamily: "monospace", fontWeight: 750, color: t.text }}>{fmt(inv.total)}</span>
               </Row>
             );
@@ -2249,10 +2250,27 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, setti
               <div style={{ display: "flex", gap: "4px" }}>
                 {["draft","sent","paid","overdue"].map(s => (
                   <Btn key={s} v={viewInv.status === s ? "primary" : "default"} size="sm"
-                    onClick={() => { setInvoices(prev => prev.map(i => i.id === viewInv.id ? {...i, status:s} : i)); setViewInv({...viewInv, status:s}); }}>
+                    onClick={() => {
+                      const update = { status: s };
+                      if (s === "paid" && !viewInv.paidDate) update.paidDate = todayISO();
+                      if (s !== "paid") update.paidDate = null;
+                      setInvoices(prev => prev.map(i => i.id === viewInv.id ? {...i, ...update} : i));
+                      setViewInv({...viewInv, ...update});
+                    }}>
                     {INVOICE_STATUS[s].label}
                   </Btn>
                 ))}
+                {viewInv.status === "paid" && (
+                  <input type="date" value={viewInv.paidDate || ""} onChange={e => {
+                    const paidDate = e.target.value;
+                    setInvoices(prev => prev.map(i => i.id === viewInv.id ? {...i, paidDate} : i));
+                    setViewInv({...viewInv, paidDate});
+                  }} style={{
+                    background: t.white, border: `1px solid ${t.border}`, borderRadius: "6px",
+                    padding: "4px 8px", fontSize: "12px", fontFamily: "'Instrument Sans', sans-serif",
+                    color: t.text, outline: "none", marginLeft: "4px",
+                  }} />
+                )}
               </div>
               <div style={{ display: "flex", gap: "4px" }}>
                 <Btn v="green" size="sm" onClick={() => downloadInvoicePDF(viewInv, settings)}>&#8595; Download PDF</Btn>
@@ -2724,6 +2742,12 @@ function Reports({ timeEntries, projects, clients, invoices, settings, getClient
         {!hide && <Stat label="Revenue" value={fmt(totalRevenue)} sub={totalHours > 0 ? `${fmt(totalRevenue / totalHours)}/hr effective` : ""} color={t.green} />}
         <Stat label="Utilization" value={`${utilization}%`} sub={`${uniqueDays} of ${workdaysInPeriod} workdays`} color={utilization >= 50 ? t.green : t.yellow} />
         {!hide && <Stat label="Invoiced" value={fmt(periodInvoiced)} sub={`${invoices.filter(i => i.issueDate >= startDate && i.issueDate <= endDate).length} invoices`} />}
+        {(() => {
+          const paid = invoices.filter(i => i.status === "paid" && i.paidDate && i.issueDate && i.issueDate >= startDate && i.issueDate <= endDate);
+          if (paid.length === 0) return null;
+          const avg = Math.round(paid.reduce((s, i) => s + (new Date(i.paidDate) - new Date(i.issueDate)) / 86400000, 0) / paid.length);
+          return <Stat label="Days to Payment" value={avg} sub={`${paid.length} paid invoice${paid.length !== 1 ? "s" : ""}`} />;
+        })()}
       </div>
 
       {/* By client breakdown */}
