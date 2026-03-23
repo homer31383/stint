@@ -381,7 +381,7 @@ export default function App() {
     const hours = Math.round(((Date.now() - activeTimer.startTime) / 3600000) * 100) / 100;
     const proj = projects.find(p => p.id === activeTimer.projectId);
     const client = proj ? clients.find(c => c.id === proj.clientId) : null;
-    const rate = getRate(client, activeTimer.serviceType);
+    const rate = getRate(client, activeTimer.serviceType, { date: todayISO(), projectId: activeTimer.projectId });
     const amount = activeTimer.serviceType === "hourly" || activeTimer.serviceType === "overtime"
       ? Math.round(hours * rate * 100) / 100
       : rate; // day rate / shoot attend = flat
@@ -394,7 +394,16 @@ export default function App() {
     setElapsed(0);
   };
 
-  const getRate = (client, serviceType) => {
+  const getRate = (client, serviceType, { date, projectId } = {}) => {
+    // Booking rate > client rate > default rate
+    if (date) {
+      const booking = pencils.find(p =>
+        p.rates?.[serviceType] != null &&
+        p.startDate <= date && p.endDate >= date &&
+        (p.projectId ? p.projectId === projectId : p.clientId === client?.id)
+      );
+      if (booking) return booking.rates[serviceType];
+    }
     if (client?.serviceRates?.[serviceType] !== undefined && client.serviceRates[serviceType] !== null) {
       return client.serviceRates[serviceType];
     }
@@ -710,7 +719,7 @@ function Dashboard({ clients, projects, pencils, timeEntries, setTimeEntries, in
     if (!quickProj) return;
     const proj = getProject(quickProj);
     const client = proj ? getClient(proj.clientId) : null;
-    const rate = getRate(client, "day_rate");
+    const rate = getRate(client, "day_rate", { date: todayISO(), projectId: quickProj });
     const amountPerHour = rate / 8;
     const entries = [];
     for (let h = 9; h < 17; h++) {
@@ -956,7 +965,7 @@ function Time({ timeEntries, setTimeEntries, projects, clients, settings, active
     pushUndo();
     const proj = getProject(projectId);
     const client = proj ? getClient(proj.clientId) : null;
-    const rate = getRate(client, serviceType);
+    const rate = getRate(client, serviceType, { date, projectId });
     const isHourBased = serviceType === "hourly" || serviceType === "overtime";
     const amount = isHourBased ? rate : rate / 8;
     setTimeEntries(prev => [{
@@ -978,7 +987,7 @@ function Time({ timeEntries, setTimeEntries, projects, clients, settings, active
     pushUndo();
     const proj = getProject(batchForm.projectId);
     const client = proj ? getClient(proj.clientId) : null;
-    const rate = getRate(client, batchForm.serviceType);
+    const rate = getRate(client, batchForm.serviceType, { date: batchForm.date, projectId: batchForm.projectId });
     const isHourBased = batchForm.serviceType === "hourly" || batchForm.serviceType === "overtime";
     const amountPerHour = isHourBased ? rate : rate / 8;
     const entries = [];
@@ -1595,7 +1604,7 @@ function Time({ timeEntries, setTimeEntries, projects, clients, settings, active
 function Pencils({ pencils, setPencils, projects, setProjects, clients, setClients, getClient, getProject, settings, isMobile }) {
   const [showAdd, setShowAdd] = useState(false);
   const [addType, setAddType] = useState("pencil"); // "pencil" or "booking"
-  const [form, setForm] = useState({ clientId: "", projectId: "", startDate: todayISO(), endDate: todayISO(), priority: "1", notes: "" });
+  const [form, setForm] = useState({ clientId: "", projectId: "", startDate: todayISO(), endDate: todayISO(), priority: "1", notes: "", rates: {} });
   const [newClient, setNewClient] = useState("");
   const [newProj, setNewProj] = useState({ name: "", clientId: "" });
   const [showNewClient, setShowNewClient] = useState(false);
@@ -1607,14 +1616,15 @@ function Pencils({ pencils, setPencils, projects, setProjects, clients, setClien
     const priority = addType === "booking" ? 0 : parseInt(form.priority);
     // If project is set, derive clientId from it
     const clientId = form.projectId ? (getProject(form.projectId)?.clientId || form.clientId) : form.clientId;
-    setPencils(prev => [{ id: uid(), clientId, projectId: form.projectId || null, startDate: form.startDate, endDate: form.endDate, priority, notes: form.notes, createdAt: Date.now() }, ...prev]);
+    const rates = Object.fromEntries(Object.entries(form.rates).filter(([, v]) => v !== "" && v != null));
+    setPencils(prev => [{ id: uid(), clientId, projectId: form.projectId || null, startDate: form.startDate, endDate: form.endDate, priority, notes: form.notes, rates: Object.keys(rates).length > 0 ? rates : undefined, createdAt: Date.now() }, ...prev]);
     setShowAdd(false);
-    setForm({ clientId: "", projectId: "", startDate: todayISO(), endDate: todayISO(), priority: "1", notes: "" });
+    setForm({ clientId: "", projectId: "", startDate: todayISO(), endDate: todayISO(), priority: "1", notes: "", rates: {} });
   };
 
   const openAdd = (type) => {
     setAddType(type);
-    setForm({ clientId: "", projectId: "", startDate: todayISO(), endDate: todayISO(), priority: type === "booking" ? "0" : "1", notes: "" });
+    setForm({ clientId: "", projectId: "", startDate: todayISO(), endDate: todayISO(), priority: type === "booking" ? "0" : "1", notes: "", rates: {} });
     setShowAdd(true);
   };
 
@@ -1726,6 +1736,11 @@ function Pencils({ pencils, setPencils, projects, setProjects, clients, setClien
           )}
         </div>
         {conflicts.length > 0 && p.priority <= 1 && <div style={{ fontSize: "11px", color: t.red, marginTop: "4px", fontWeight: 600 }}>&laquo; Conflicts with {conflicts.map(c => { const cp = c.projectId ? getProject(c.projectId) : null; return cp?.name || (c.clientId ? getClient(c.clientId)?.name : "?"); }).join(", ")}</div>}
+        {p.rates && Object.keys(p.rates).length > 0 && (
+          <div style={{ fontSize: "11px", color: t.textTertiary, marginTop: "3px" }}>
+            {SERVICE_TYPES.filter(s => p.rates[s.id] != null).map(s => `${s.label.replace(" Rate", "").replace(" Attend", "")}: ${fmt(p.rates[s.id])}`).join(" / ")}
+          </div>
+        )}
         {p.notes && <div style={{ fontSize: "12px", color: t.textTertiary, marginTop: "3px" }}>{p.notes}</div>}
       </div>
     );
@@ -1909,6 +1924,16 @@ function Pencils({ pencils, setPencils, projects, setProjects, clients, setClien
               </div>
             )}
             <TextArea label="Notes" value={form.notes} onChange={v => setForm({...form, notes:v})} rows={2} />
+            <div>
+              <label style={{ fontSize: "11.5px", fontWeight: 600, color: t.textSecondary, display: "block", marginBottom: "8px" }}>Rates (leave blank for defaults)</label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
+                {SERVICE_TYPES.filter(s => s.id !== "expense").map(s => (
+                  <Field key={s.id} label={s.label} type="number" value={form.rates?.[s.id] ?? ""}
+                    onChange={v => setForm(prev => ({ ...prev, rates: { ...prev.rates, [s.id]: v === "" ? "" : parseFloat(v) } }))}
+                    placeholder={`Default: ${fmt(settings.serviceRates?.[s.id] ?? s.defaultRate)}`} />
+                ))}
+              </div>
+            </div>
             <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "6px" }}>
               <Btn onClick={() => setShowAdd(false)}>Cancel</Btn>
               <Btn v="primary" onClick={addEntry} disabled={!form.clientId}>
