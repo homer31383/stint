@@ -278,6 +278,40 @@ export default function App() {
   const [elapsed, setElapsed] = useState(0);
   const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 767px)").matches);
   const [moreMenuOpen, setMoreMenuOpen] = useState(false);
+  const [showSearch, setShowSearch] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+
+  useEffect(() => {
+    const timer = setTimeout(() => setDebouncedQuery(searchQuery), 200);
+    return () => clearTimeout(timer);
+  }, [searchQuery]);
+
+  const searchResults = useMemo(() => {
+    const q = debouncedQuery.toLowerCase().trim();
+    if (!q) return null;
+    const match = (s) => s && s.toLowerCase().includes(q);
+    const res = { clients: [], projects: [], invoices: [], bookings: [] };
+    clients.forEach(c => {
+      if (match(c.name) || match(c.email) || c.contacts?.some(ct => match(ct.name) || match(ct.role) || match(ct.email)))
+        res.clients.push(c);
+    });
+    projects.forEach(p => {
+      if (match(p.name) || match(p.director) || match(p.producer))
+        res.projects.push({ ...p, _clientName: clients.find(c => c.id === p.clientId)?.name });
+    });
+    invoices.forEach(i => {
+      if (match(i.number) || match(i.clientName))
+        res.invoices.push(i);
+    });
+    pencils.forEach(p => {
+      if (match(p.notes)) {
+        const proj = projects.find(pr => pr.id === p.projectId);
+        res.bookings.push({ ...p, _projName: proj?.name, _clientName: clients.find(c => c.id === proj?.clientId)?.name });
+      }
+    });
+    return res;
+  }, [debouncedQuery, clients, projects, invoices, pencils]);
 
   // Auth state
   const [session, setSession] = useState(null);
@@ -446,7 +480,117 @@ export default function App() {
             ))}
           </nav>}
         </div>
+        <button onClick={() => { setShowSearch(true); setSearchQuery(""); setDebouncedQuery(""); }} style={{
+          background: t.surfaceAlt, border: "none", borderRadius: "8px", width: "32px", height: "32px",
+          display: "flex", alignItems: "center", justifyContent: "center", cursor: "pointer", color: t.textTertiary,
+        }}
+          onMouseEnter={e => e.currentTarget.style.color = t.text}
+          onMouseLeave={e => e.currentTarget.style.color = t.textTertiary}
+        >
+          <svg width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
+          </svg>
+        </button>
       </header>
+
+      {/* SEARCH MODAL */}
+      {showSearch && (
+        <div style={{
+          position: "fixed", inset: 0, zIndex: 1000,
+          display: "flex", alignItems: isMobile ? "stretch" : "flex-start", justifyContent: "center",
+          background: "rgba(0,0,0,0.2)", backdropFilter: "blur(3px)",
+          paddingTop: isMobile ? 0 : "80px",
+        }} onClick={() => setShowSearch(false)}>
+          <div onClick={e => e.stopPropagation()} style={{
+            background: t.white, border: `1px solid ${t.border}`,
+            borderRadius: isMobile ? 0 : "14px",
+            width: isMobile ? "100%" : "min(520px, 94vw)",
+            height: isMobile ? "100%" : "auto",
+            maxHeight: isMobile ? "100%" : "70vh",
+            display: "flex", flexDirection: "column",
+            boxShadow: "0 20px 60px rgba(0,0,0,0.12)",
+            overflow: "hidden",
+          }}>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", padding: isMobile ? "12px 16px" : "16px 20px", borderBottom: `1px solid ${t.borderLight}` }}>
+              <svg width="18" height="18" fill="none" stroke={t.textTertiary} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                <circle cx="11" cy="11" r="8" /><path d="M21 21l-4.35-4.35" />
+              </svg>
+              <input autoFocus value={searchQuery} onChange={e => setSearchQuery(e.target.value)}
+                placeholder="Search clients, projects, invoices, bookings..."
+                onKeyDown={e => e.key === "Escape" && setShowSearch(false)}
+                style={{
+                  flex: 1, border: "none", outline: "none", fontSize: "15px", background: "transparent",
+                  color: t.text, fontFamily: "'Instrument Sans', sans-serif",
+                }} />
+              <button onClick={() => setShowSearch(false)} style={{
+                background: t.surfaceAlt, border: "none", borderRadius: "6px", width: "28px", height: "28px",
+                display: "flex", alignItems: "center", justifyContent: "center", color: t.textTertiary, cursor: "pointer", fontSize: "14px",
+              }}>×</button>
+            </div>
+            <div style={{ flex: 1, overflow: "auto", padding: isMobile ? "8px 16px 16px" : "8px 20px 20px" }}>
+              {!debouncedQuery.trim() && (
+                <div style={{ padding: "32px 0", textAlign: "center", color: t.textTertiary, fontSize: "13px" }}>Start typing to search...</div>
+              )}
+              {searchResults && (() => {
+                const total = searchResults.clients.length + searchResults.projects.length + searchResults.invoices.length + searchResults.bookings.length;
+                if (total === 0) return <div style={{ padding: "32px 0", textAlign: "center", color: t.textTertiary, fontSize: "13px" }}>No results found</div>;
+                const groupStyle = { fontSize: "11px", fontWeight: 700, color: t.textTertiary, textTransform: "uppercase", letterSpacing: "0.05em", padding: "12px 0 6px" };
+                const itemStyle = {
+                  padding: "8px 10px", borderRadius: "8px", cursor: "pointer", display: "flex", flexDirection: "column", gap: "2px",
+                  transition: "background 0.1s",
+                };
+                const navigate = (tabName) => { setTab(tabName); setShowSearch(false); };
+                return <>
+                  {searchResults.clients.length > 0 && <>
+                    <div style={groupStyle}>Clients ({searchResults.clients.length})</div>
+                    {searchResults.clients.map(c => (
+                      <div key={c.id} style={itemStyle} onClick={() => navigate("clients")}
+                        onMouseEnter={e => e.currentTarget.style.background = t.surfaceAlt}
+                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <span style={{ fontSize: "13px", fontWeight: 600, color: t.text }}>{c.name}</span>
+                        {(c.email || c.contacts?.[0]?.email) && <span style={{ fontSize: "11px", color: t.textTertiary }}>{c.email || c.contacts[0].email}</span>}
+                      </div>
+                    ))}
+                  </>}
+                  {searchResults.projects.length > 0 && <>
+                    <div style={groupStyle}>Projects ({searchResults.projects.length})</div>
+                    {searchResults.projects.map(p => (
+                      <div key={p.id} style={itemStyle} onClick={() => navigate("clients")}
+                        onMouseEnter={e => e.currentTarget.style.background = t.surfaceAlt}
+                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <span style={{ fontSize: "13px", fontWeight: 600, color: t.text }}>{p.name}</span>
+                        <span style={{ fontSize: "11px", color: t.textTertiary }}>{p._clientName}{p.director ? ` · ${p.director}` : ""}</span>
+                      </div>
+                    ))}
+                  </>}
+                  {searchResults.invoices.length > 0 && <>
+                    <div style={groupStyle}>Invoices ({searchResults.invoices.length})</div>
+                    {searchResults.invoices.map(i => (
+                      <div key={i.id} style={itemStyle} onClick={() => navigate("invoices")}
+                        onMouseEnter={e => e.currentTarget.style.background = t.surfaceAlt}
+                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <span style={{ fontSize: "13px", fontWeight: 600, color: t.text }}>{i.number} — {i.clientName}</span>
+                        <span style={{ fontSize: "11px", color: t.textTertiary }}>{fmt(i.total)} · {INVOICE_STATUS[i.status]?.label}</span>
+                      </div>
+                    ))}
+                  </>}
+                  {searchResults.bookings.length > 0 && <>
+                    <div style={groupStyle}>Bookings ({searchResults.bookings.length})</div>
+                    {searchResults.bookings.map(b => (
+                      <div key={b.id} style={itemStyle} onClick={() => navigate("pencils")}
+                        onMouseEnter={e => e.currentTarget.style.background = t.surfaceAlt}
+                        onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                        <span style={{ fontSize: "13px", fontWeight: 600, color: t.text }}>{b._projName || "Booking"}</span>
+                        <span style={{ fontSize: "11px", color: t.textTertiary }}>{b._clientName}{b.notes ? ` · ${b.notes}` : ""}</span>
+                      </div>
+                    ))}
+                  </>}
+                </>;
+              })()}
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* MAIN */}
       <main style={{ flex: 1, overflow: "auto", padding: isMobile ? "16px 0" : "28px 32px", paddingBottom: isMobile ? "72px" : undefined, maxWidth: isMobile ? "100%" : "1100px", width: "100%", margin: "0 auto" }}>
