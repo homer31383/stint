@@ -637,7 +637,7 @@ export default function App() {
       {/* MAIN */}
       <main style={{ flex: 1, overflow: "auto", padding: isMobile ? "16px 0" : "28px 32px", paddingBottom: isMobile ? "72px" : undefined, maxWidth: isMobile ? "100%" : "1100px", width: "100%", margin: "0 auto" }}>
         {tab === "dashboard" && <Dashboard {...{clients, projects, pencils, timeEntries, setTimeEntries, invoices, settings, setTab, getClient, getProject, getRate, isMobile}} />}
-        {tab === "time" && <Time {...{timeEntries, setTimeEntries, projects, clients, settings, activeTimer, startTimer, stopTimer, elapsed, getClient, getProject, getRate, isMobile}} />}
+        {tab === "time" && <Time {...{timeEntries, setTimeEntries, projects, clients, pencils, settings, activeTimer, startTimer, stopTimer, elapsed, getClient, getProject, getRate, isMobile}} />}
         {tab === "pencils" && <Pencils {...{pencils, setPencils, projects, setProjects, clients, setClients, getClient, getProject, settings, isMobile}} />}
         {tab === "invoices" && <Invoices {...{invoices, setInvoices, timeEntries, projects, clients, settings, setSettings, getClient, getProject, isMobile}} />}
         {tab === "clients" && <Clients {...{clients, setClients, projects, setProjects, settings, timeEntries, pencils, invoices, getClient, getProject, getRate, isMobile}} />}
@@ -893,10 +893,11 @@ function Muted({ children }) {
 // ============================================================
 // TIME TRACKING
 // ============================================================
-function Time({ timeEntries, setTimeEntries, projects, clients, settings, activeTimer, startTimer, stopTimer, elapsed, getClient, getProject, getRate, isMobile }) {
+function Time({ timeEntries, setTimeEntries, projects, clients, pencils, settings, activeTimer, startTimer, stopTimer, elapsed, getClient, getProject, getRate, isMobile }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [activeProject, setActiveProject] = useState(null); // { projectId, serviceType }
-  const [selectedClient, setSelectedClient] = useState(""); // filter projects by client
+  const [selectedClient, setSelectedClient] = useState(""); // filter projects by client, "__all__" = show all
+  const showAllProjects = selectedClient === "__all__";
   const [noteModal, setNoteModal] = useState(null); // { entryIds, date, startHour, endHour, projectId }
   const [noteText, setNoteText] = useState("");
   const [undoStack, setUndoStack] = useState([]); // previous timeEntries snapshots
@@ -958,13 +959,37 @@ function Time({ timeEntries, setTimeEntries, projects, clients, settings, active
   const getEntry = (date, hour) => hourMap[`${date}::${hour}`] || null;
   const dayTotalHrs = (d) => weekEntries.filter(e => e.date === d).length;
 
-  // Filtered projects by selected client
+  // Projects with active bookings for the current week
+  const bookedProjectIds = useMemo(() => {
+    const weekStart = weekDates[0], weekEnd = weekDates[6];
+    const ids = new Set();
+    pencils.forEach(p => {
+      if (p.startDate <= weekEnd && p.endDate >= weekStart) {
+        if (p.projectId) ids.add(p.projectId);
+        // Also include all projects for that client
+        if (p.clientId) projects.forEach(pr => { if (pr.clientId === p.clientId) ids.add(pr.id); });
+        if (p.projectId) {
+          const proj = getProject(p.projectId);
+          if (proj) projects.forEach(pr => { if (pr.clientId === proj.clientId) ids.add(pr.id); });
+        }
+      }
+    });
+    return ids;
+  }, [pencils, projects, weekDates]);
+
+  // Filtered projects by selected client / booking filter
   const filteredProjects = useMemo(() => {
-    const filtered = selectedClient
-      ? projects.filter(p => p.clientId === selectedClient && p.status !== "complete")
-      : projects.filter(p => p.id !== PERSONAL_PROJECT_ID && p.status !== "complete");
+    let filtered;
+    if (showAllProjects) {
+      filtered = projects.filter(p => p.id !== PERSONAL_PROJECT_ID && p.status !== "complete");
+    } else if (selectedClient) {
+      filtered = projects.filter(p => p.clientId === selectedClient && p.status !== "complete");
+    } else {
+      // Default: only projects with active bookings this week
+      filtered = projects.filter(p => p.id !== PERSONAL_PROJECT_ID && p.status !== "complete" && bookedProjectIds.has(p.id));
+    }
     return filtered;
-  }, [projects, selectedClient]);
+  }, [projects, selectedClient, showAllProjects, bookedProjectIds]);
 
   // Colors per project
   const PERSONAL_COLOR = { bg: "#e8e5f0", border: "#c4bdd9", text: "#5b4a7a", dot: "#7c6c9a" };
@@ -1217,8 +1242,8 @@ function Time({ timeEntries, setTimeEntries, projects, clients, settings, active
 
               {!isMobile && <Sel value={selectedClient}
                 onChange={v => { setSelectedClient(v); setActiveProject(null); }}
-                options={[{value: "", label: "All clients"}, ...clients.map(c => ({value: c.id, label: c.name}))]}
-                style={{ minWidth: "140px" }}
+                options={[{value: "", label: "Booked this week"}, {value: "__all__", label: "All projects"}, ...clients.map(c => ({value: c.id, label: c.name}))]}
+                style={{ minWidth: "150px" }}
               />}
               {filteredProjects.map(p => {
                 const client = getClient(p.clientId);
@@ -1241,7 +1266,7 @@ function Time({ timeEntries, setTimeEntries, projects, clients, settings, active
                     }}
                   >
                     <div style={{ width: "8px", height: "8px", borderRadius: "2px", background: pc.dot, flexShrink: 0 }} />
-                    {!selectedClient && <span style={{ opacity: 0.6 }}>{client?.name} &middot;</span>}
+                    {(!selectedClient || showAllProjects) && <span style={{ opacity: 0.6 }}>{client?.name} &middot;</span>}
                     {p.name}
                   </button>
                 );
