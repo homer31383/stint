@@ -1485,7 +1485,7 @@ function Pencils({ pencils, setPencils, projects, setProjects, clients, setClien
   const addClient = () => {
     if (!newClient.trim()) return;
     const clientId = uid();
-    setClients(prev => [{ id: clientId, name: newClient.trim(), email: "", serviceRates: {}, notes: "", createdAt: Date.now() }, ...prev]);
+    setClients(prev => [{ id: clientId, name: newClient.trim(), email: "", serviceRates: {}, notes: "", contacts: [], createdAt: Date.now() }, ...prev]);
     setProjects(prev => [{ id: uid(), clientId, name: "Internal Meeting", notes: "", createdAt: Date.now() }, ...prev]);
     setNewClient(""); setShowNewClient(false);
   };
@@ -2005,7 +2005,7 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, setti
       number: `${settings.invoicePrefix}-${String(settings.nextInvoiceNumber).padStart(4, "0")}`,
       clientId: selClient,
       clientName: client?.name,
-      clientEmail: client?.email,
+      clientEmail: client?.email || client?.contacts?.[0]?.email,
       entryIds: allEntryIds,
       lineItems,
       total,
@@ -2271,7 +2271,7 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, setti
 function Clients({ clients, setClients, projects, setProjects, settings, timeEntries, pencils, invoices, getClient, getProject, getRate, isMobile }) {
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ name: "", email: "", notes: "", serviceRates: {} });
+  const [form, setForm] = useState({ name: "", email: "", notes: "", serviceRates: {}, contacts: [] });
   const [showAddProj, setShowAddProj] = useState(false);
   const [editProjId, setEditProjId] = useState(null);
   const [expandedClients, setExpandedClients] = useState({}); // { clientId: true/false }
@@ -2286,11 +2286,11 @@ function Clients({ clients, setClients, projects, setProjects, settings, timeEnt
     creativeDirector: "", lead3d: "", lead2d: "", myRole: "", dueDate: "", notes: "", status: "active",
   });
 
-  const startAdd = () => { setForm({ name: "", email: "", notes: "", serviceRates: {} }); setEditId(null); setShowAdd(true); };
-  const startEdit = (c) => { setForm({ name: c.name, email: c.email || "", notes: c.notes || "", serviceRates: c.serviceRates || {} }); setEditId(c.id); setShowAdd(true); };
+  const startAdd = () => { setForm({ name: "", email: "", notes: "", serviceRates: {}, contacts: [] }); setEditId(null); setShowAdd(true); };
+  const startEdit = (c) => { setForm({ name: c.name, email: c.email || "", notes: c.notes || "", serviceRates: c.serviceRates || {}, contacts: c.contacts || [] }); setEditId(c.id); setShowAdd(true); };
 
   const saveClient = () => {
-    const data = { name: form.name.trim(), email: form.email.trim(), notes: form.notes, serviceRates: form.serviceRates };
+    const data = { name: form.name.trim(), email: form.email.trim(), notes: form.notes, serviceRates: form.serviceRates, contacts: form.contacts.filter(ct => ct.name || ct.role || ct.email) };
     if (editId) {
       setClients(prev => prev.map(c => c.id === editId ? { ...c, ...data } : c));
     } else {
@@ -2304,6 +2304,10 @@ function Clients({ clients, setClients, projects, setProjects, settings, timeEnt
   const setServiceRate = (svcId, val) => {
     setForm(prev => ({ ...prev, serviceRates: { ...prev.serviceRates, [svcId]: val === "" ? null : parseFloat(val) } }));
   };
+
+  const addContact = () => setForm(prev => ({ ...prev, contacts: [...prev.contacts, { name: "", role: "", email: "" }] }));
+  const updateContact = (idx, field, val) => setForm(prev => ({ ...prev, contacts: prev.contacts.map((c, i) => i === idx ? { ...c, [field]: val } : c) }));
+  const removeContact = (idx) => setForm(prev => ({ ...prev, contacts: prev.contacts.filter((_, i) => i !== idx) }));
 
   const openAddProj = (clientId = "") => {
     setProjForm(emptyProjForm(clientId));
@@ -2401,7 +2405,7 @@ function Clients({ clients, setClients, projects, setProjects, settings, timeEnt
                       <div style={{ fontSize: "15px", fontWeight: 700, color: t.text }}>{c.name}</div>
                       <div style={{ fontSize: "12px", color: t.textTertiary, marginTop: "2px" }}>
                         {activeCount} active project{activeCount !== 1 ? "s" : ""} &middot; {cEntries.length} entries
-                        {c.email && <span> &middot; {c.email}</span>}
+                        {(c.email || c.contacts?.[0]?.email) && <span> &middot; {c.email || c.contacts[0].email}</span>}
                       </div>
                     </div>
                   </div>
@@ -2413,6 +2417,15 @@ function Clients({ clients, setClients, projects, setProjects, settings, timeEnt
                 {/* Expanded content */}
                 {expanded && (
                   <div style={{ padding: "0 18px 14px", borderTop: `1px solid ${t.borderLight}` }}>
+                    {c.contacts?.length > 0 && (
+                      <div style={{ marginTop: "10px", marginBottom: "4px" }}>
+                        {c.contacts.map((ct, i) => (
+                          <div key={i} style={{ fontSize: "12px", color: t.textSecondary, lineHeight: "1.6" }}>
+                            {[ct.name, ct.role, ct.email].filter(Boolean).join(", ")}
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {cProjects.length > 0 && (
                       <div style={{ display: "flex", flexDirection: "column", gap: "5px", marginTop: "12px" }}>
                         {[...cProjects].sort((a, b) => {
@@ -2492,6 +2505,32 @@ function Clients({ clients, setClients, projects, setProjects, settings, timeEnt
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             <Field label="Name" value={form.name} onChange={v => setForm({...form, name:v})} placeholder="e.g. Coffee and TV" />
             <Field label="Email" value={form.email} onChange={v => setForm({...form, email:v})} placeholder="producer@agency.com" />
+            <div>
+              <label style={{ fontSize: "11.5px", fontWeight: 600, color: t.textSecondary, display: "block", marginBottom: "8px" }}>Contacts</label>
+              {form.contacts.map((ct, i) => (
+                <div key={i} style={{ display: "flex", gap: "6px", marginBottom: "6px", alignItems: "center" }}>
+                  <input value={ct.name} onChange={e => updateContact(i, "name", e.target.value)} placeholder="Name"
+                    style={{ flex: 1, background: t.white, border: `1px solid ${t.border}`, borderRadius: "7px",
+                      padding: "7px 10px", fontSize: "13px", fontFamily: "'Instrument Sans', sans-serif", outline: "none" }} />
+                  <input value={ct.role} onChange={e => updateContact(i, "role", e.target.value)} placeholder="Role"
+                    style={{ flex: 0.7, background: t.white, border: `1px solid ${t.border}`, borderRadius: "7px",
+                      padding: "7px 10px", fontSize: "13px", fontFamily: "'Instrument Sans', sans-serif", outline: "none" }} />
+                  <input value={ct.email} onChange={e => updateContact(i, "email", e.target.value)} placeholder="Email"
+                    style={{ flex: 1, background: t.white, border: `1px solid ${t.border}`, borderRadius: "7px",
+                      padding: "7px 10px", fontSize: "13px", fontFamily: "'Instrument Sans', sans-serif", outline: "none" }} />
+                  <button onClick={() => removeContact(i)} style={{
+                    background: "none", border: "none", fontSize: "16px", color: t.textTertiary,
+                    cursor: "pointer", padding: "4px 6px", borderRadius: "4px", fontFamily: "'Instrument Sans', sans-serif",
+                  }} onMouseEnter={ev => ev.currentTarget.style.color = t.red}
+                     onMouseLeave={ev => ev.currentTarget.style.color = t.textTertiary}>&times;</button>
+                </div>
+              ))}
+              <button onClick={addContact} style={{
+                background: "none", border: `1px dashed ${t.border}`, borderRadius: "6px",
+                padding: "6px 12px", fontSize: "12px", color: t.textTertiary, cursor: "pointer",
+                fontFamily: "'Instrument Sans', sans-serif", width: "100%",
+              }}>+ Add Contact</button>
+            </div>
             <div>
               <label style={{ fontSize: "11.5px", fontWeight: 600, color: t.textSecondary, display: "block", marginBottom: "8px" }}>Negotiated Rates (leave blank for defaults)</label>
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "8px" }}>
