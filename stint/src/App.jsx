@@ -358,34 +358,45 @@ export default function App() {
     }
   }, []);
 
-  // Ensure every client has an Internal Meeting project + deduplicate
+  // One-time cleanup: deduplicate Internal Meeting projects per client
+  const didCleanup = useRef(false);
   useEffect(() => {
+    if (didCleanup.current || clients.length === 0) return;
+    didCleanup.current = true;
     setProjects(prev => {
-      // Remove duplicate Internal Meeting projects per client, keep oldest
-      const seen = {};
-      const dupeIds = new Set();
+      // Group Internal Meeting projects by clientId
+      const byClient = {};
       prev.forEach(p => {
         if (p.name === "Internal Meeting") {
-          if (seen[p.clientId]) {
-            // Keep the one with lower createdAt
-            const existing = seen[p.clientId];
-            if ((p.createdAt || 0) < (existing.createdAt || 0)) {
-              dupeIds.add(existing.id);
-              seen[p.clientId] = p;
-            } else {
-              dupeIds.add(p.id);
-            }
-          } else {
-            seen[p.clientId] = p;
-          }
+          (byClient[p.clientId] ||= []).push(p);
         }
       });
-      const cleaned = dupeIds.size > 0 ? prev.filter(p => !dupeIds.has(p.id)) : prev;
-      // Add missing Internal Meeting projects
-      const missing = clients.filter(c => c.id !== PERSONAL_CLIENT_ID && !cleaned.some(p => p.clientId === c.id && p.name === "Internal Meeting"));
-      if (missing.length === 0 && dupeIds.size === 0) return prev;
-      const newProjects = missing.map(c => ({ id: uid(), clientId: c.id, name: "Internal Meeting", notes: "", createdAt: Date.now() }));
-      return [...cleaned, ...newProjects];
+      const dupeIds = new Set();
+      for (const dupes of Object.values(byClient)) {
+        if (dupes.length <= 1) continue;
+        // Count references: time entries + pencils pointing to each project
+        const refCount = (id) =>
+          timeEntries.filter(e => e.projectId === id).length +
+          pencils.filter(b => b.projectId === id).length;
+        // Sort: most references first, then oldest createdAt as tiebreaker
+        dupes.sort((a, b) => refCount(b.id) - refCount(a.id) || (a.createdAt || 0) - (b.createdAt || 0));
+        // Keep first (most referenced / oldest), mark rest for removal only if zero references
+        for (let i = 1; i < dupes.length; i++) {
+          if (refCount(dupes[i].id) === 0) dupeIds.add(dupes[i].id);
+        }
+      }
+      if (dupeIds.size === 0) return prev;
+      return prev.filter(p => !dupeIds.has(p.id));
+    });
+  }, [clients, timeEntries, pencils]);
+
+  // Ensure every client has an Internal Meeting project
+  useEffect(() => {
+    if (clients.length === 0) return;
+    setProjects(prev => {
+      const missing = clients.filter(c => c.id !== PERSONAL_CLIENT_ID && !prev.some(p => p.clientId === c.id && p.name === "Internal Meeting"));
+      if (missing.length === 0) return prev;
+      return [...prev, ...missing.map(c => ({ id: uid(), clientId: c.id, name: "Internal Meeting", notes: "", createdAt: Date.now() }))];
     });
   }, [clients]);
 
