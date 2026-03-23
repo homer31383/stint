@@ -358,13 +358,35 @@ export default function App() {
     }
   }, []);
 
-  // Ensure every client has an Internal Meeting project
+  // Ensure every client has an Internal Meeting project + deduplicate
   useEffect(() => {
-    const missing = clients.filter(c => c.id !== PERSONAL_CLIENT_ID && !projects.some(p => p.clientId === c.id && p.name === "Internal Meeting"));
-    if (missing.length > 0) {
+    setProjects(prev => {
+      // Remove duplicate Internal Meeting projects per client, keep oldest
+      const seen = {};
+      const dupeIds = new Set();
+      prev.forEach(p => {
+        if (p.name === "Internal Meeting") {
+          if (seen[p.clientId]) {
+            // Keep the one with lower createdAt
+            const existing = seen[p.clientId];
+            if ((p.createdAt || 0) < (existing.createdAt || 0)) {
+              dupeIds.add(existing.id);
+              seen[p.clientId] = p;
+            } else {
+              dupeIds.add(p.id);
+            }
+          } else {
+            seen[p.clientId] = p;
+          }
+        }
+      });
+      const cleaned = dupeIds.size > 0 ? prev.filter(p => !dupeIds.has(p.id)) : prev;
+      // Add missing Internal Meeting projects
+      const missing = clients.filter(c => c.id !== PERSONAL_CLIENT_ID && !cleaned.some(p => p.clientId === c.id && p.name === "Internal Meeting"));
+      if (missing.length === 0 && dupeIds.size === 0) return prev;
       const newProjects = missing.map(c => ({ id: uid(), clientId: c.id, name: "Internal Meeting", notes: "", createdAt: Date.now() }));
-      setProjects(prev => [...prev, ...newProjects]);
-    }
+      return [...cleaned, ...newProjects];
+    });
   }, [clients]);
 
   useEffect(() => {
