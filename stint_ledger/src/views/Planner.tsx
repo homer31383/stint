@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useMemo, useState, useCallback } from 'react';
 import type { StintData, AccountBalances } from '../lib/types';
 import { StatCard } from '../components/StatCard';
 import { Panel } from '../components/Panel';
@@ -6,6 +6,9 @@ import { Slider } from '../components/Slider';
 import { estimateTaxes, estimateW2Taxes } from '../lib/tax';
 import { fmt, fmtPct, currentYear, weekdaysElapsedYTD, weekdaysBetween } from '../lib/helpers';
 import { usePlannerSettings } from '../hooks/usePlannerSettings';
+import { useExpenseModel } from '../hooks/useExpenseModel';
+import { useSavedScenarios } from '../hooks/useSavedScenarios';
+import type { SavedScenario, SavedScenarioMetrics } from '../hooks/useSavedScenarios';
 
 interface Props {
   data: StintData;
@@ -46,6 +49,13 @@ export function Planner({ data, balances }: Props) {
 
   const { settings: s, update, reset } = usePlannerSettings(computedDefaults);
   const [resetShown, setResetShown] = useState(false);
+
+  const { model: expenseModel, replaceModel: replaceExpenseModel } = useExpenseModel();
+  const { scenarios: savedScenarios, save: saveScenario, remove: removeScenario } = useSavedScenarios();
+  const [scenariosOpen, setScenariosOpen] = useState(false);
+  const [compareMode, setCompareMode] = useState(false);
+  const [compareIds, setCompareIds] = useState<string[]>([]);
+  const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
 
   const mode = s.employmentMode ?? 'freelance';
 
@@ -197,6 +207,9 @@ export function Planner({ data, balances }: Props) {
       adjustedExpenses,
       monthlyCashFlow,
       annualSavings,
+      freelanceMonthlyCashFlow,
+      freelanceAnnualSavings: freelanceMonthlyCashFlow * 12,
+      fullMonthlyCashFlow,
       fullAnnualSavings,
       monthlyRetirementGrowth,
       annualRetirementGrowth,
@@ -223,8 +236,12 @@ export function Planner({ data, balances }: Props) {
     const adjustedExpenses = monthlyExpenses + healthDelta;
 
     // Monthly cash flow (net take-home minus expenses)
-    const monthlyInterest = fullPicture ? (balances.hys * cashReturn + balances.moneyMarket * cashReturn) / 12 : 0;
-    const monthlyInvestmentReturns = fullPicture ? balances.brokerage * equityReturn / 12 : 0;
+    const monthlyInterestAlways = (balances.hys * cashReturn + balances.moneyMarket * cashReturn) / 12;
+    const monthlyInvestmentReturnsAlways = balances.brokerage * equityReturn / 12;
+    const monthlyInterest = fullPicture ? monthlyInterestAlways : 0;
+    const monthlyInvestmentReturns = fullPicture ? monthlyInvestmentReturnsAlways : 0;
+    const incomeOnlyMonthlyCashFlow = taxes.netMonthly - adjustedExpenses;
+    const fullMonthlyCashFlow = taxes.netMonthly + monthlyInterestAlways + monthlyInvestmentReturnsAlways - adjustedExpenses;
     const monthlyCashFlow = taxes.netMonthly + monthlyInterest + monthlyInvestmentReturns - adjustedExpenses;
 
     // Retirement account growth (same as freelance calc)
@@ -249,8 +266,11 @@ export function Planner({ data, balances }: Props) {
       taxes, ftHealthIns, ftOtherBenefits,
       adjustedExpenses, monthlyCashFlow,
       monthlyInterest, monthlyInvestmentReturns,
+      incomeOnlyMonthlyCashFlow,
+      incomeOnlyAnnualSavings: incomeOnlyMonthlyCashFlow * 12,
+      fullMonthlyCashFlow,
       annualSavings: monthlyCashFlow * 12,
-      fullAnnualSavings: (taxes.netMonthly + (balances.hys * cashReturn + balances.moneyMarket * cashReturn) / 12 + balances.brokerage * equityReturn / 12 - adjustedExpenses) * 12,
+      fullAnnualSavings: fullMonthlyCashFlow * 12,
       monthlyRetirementGrowth, annualRetirementGrowth,
       monthlyNWGrowth, annualNWGrowth,
     };
@@ -340,6 +360,68 @@ export function Planner({ data, balances }: Props) {
   const projMax = Math.max(...projection.map((p) => p.total), 1);
 
   const activeCashFlow = mode === 'fulltime' && ftCalc ? ftCalc.monthlyCashFlow : calc.monthlyCashFlow;
+  const activeAnnualSavings = mode === 'fulltime' && ftCalc ? ftCalc.annualSavings : calc.annualSavings;
+
+  // Expense totals from the expense model
+  const expenseRecurringTotal = useMemo(
+    () => expenseModel.recurring.filter(r => !r.muted).reduce((s, r) => s + r.amount, 0),
+    [expenseModel.recurring],
+  );
+  const expenseOneTimeTotal = useMemo(
+    () => expenseModel.oneTime.filter(e => !e.muted).reduce((s, e) => s + e.amount, 0),
+    [expenseModel.oneTime],
+  );
+
+  // Current metrics for save/compare
+  const currentMetrics: SavedScenarioMetrics = useMemo(() => ({
+    mode: mode as 'freelance' | 'fulltime',
+    dayRate: s.dayRate,
+    salary: s.ftSalary ?? 180000,
+    utilization: s.utilization,
+    grossAnnual: mode === 'fulltime' && ftCalc ? ftCalc.salary : calc.grossAnnual,
+    netAnnual: mode === 'fulltime' && ftCalc ? ftCalc.taxes.netAnnual : calc.taxes.netAnnual,
+    monthlyCashFlowIncomeOnly: mode === 'fulltime' && ftCalc ? ftCalc.incomeOnlyMonthlyCashFlow : calc.freelanceMonthlyCashFlow,
+    monthlyCashFlowFull: mode === 'fulltime' && ftCalc ? ftCalc.fullMonthlyCashFlow : calc.fullMonthlyCashFlow,
+    annualSavingsIncomeOnly: mode === 'fulltime' && ftCalc ? ftCalc.incomeOnlyAnnualSavings : calc.freelanceAnnualSavings,
+    annualSavingsFull: mode === 'fulltime' && ftCalc ? ftCalc.fullAnnualSavings : calc.fullAnnualSavings,
+    year5NetWorth: projection[5]?.total ?? 0,
+    monthlyExpenses: mode === 'fulltime' && ftCalc ? ftCalc.adjustedExpenses : calc.adjustedExpenses,
+    monthlyRecurringTotal: expenseRecurringTotal,
+    oneTimeAnnualTotal: expenseOneTimeTotal,
+  }), [mode, s, ftCalc, calc, projection, expenseRecurringTotal, expenseOneTimeTotal]);
+
+  const handleSaveScenario = useCallback(() => {
+    const name = prompt('Scenario name:');
+    if (!name?.trim()) return;
+    saveScenario(name.trim(), { ...s }, { ...expenseModel }, currentMetrics);
+  }, [s, expenseModel, currentMetrics, saveScenario]);
+
+  const handleLoadScenario = useCallback((scenario: SavedScenario) => {
+    if (!confirm('This will replace your current planner settings and expense model. Continue?')) return;
+    const keys = Object.keys(scenario.settings) as (keyof typeof scenario.settings)[];
+    for (const key of keys) {
+      update(key, scenario.settings[key] as never);
+    }
+    if (scenario.expenseModel) {
+      replaceExpenseModel(scenario.expenseModel);
+    }
+  }, [update, replaceExpenseModel]);
+
+  const toggleCompareId = useCallback((id: string) => {
+    setCompareIds(prev => {
+      if (prev.includes(id)) return prev.filter(x => x !== id);
+      if (prev.length >= 3) return prev;
+      return [...prev, id];
+    });
+  }, []);
+
+  // Build comparison data for selected scenarios
+  const compareData = useMemo(() => {
+    if (!compareMode) return [];
+    return compareIds
+      .map(id => savedScenarios.find(s => s.id === id))
+      .filter((s): s is SavedScenario => !!s);
+  }, [compareMode, compareIds, savedScenarios]);
 
   const summaryText = activeCashFlow > 1000
     ? 'Healthy surplus — you\'re saving significantly each month.'
@@ -351,26 +433,28 @@ export function Planner({ data, balances }: Props) {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-xl font-bold text-white">Financial Planner</h1>
-
-      {/* Employment Mode Toggle */}
-      <div className="flex items-center gap-4">
-        <button
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            mode === 'freelance' ? 'bg-accent text-white' : 'bg-surface-2 text-gray-400 hover:text-gray-200'
-          }`}
-          onClick={() => update('employmentMode', 'freelance')}
-        >
-          Freelance
-        </button>
-        <button
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            mode === 'fulltime' ? 'bg-accent text-white' : 'bg-surface-2 text-gray-400 hover:text-gray-200'
-          }`}
-          onClick={() => update('employmentMode', 'fulltime')}
-        >
-          Full-Time
-        </button>
+      <div className="flex items-center justify-between">
+        <h1 className="text-xl font-bold text-white">Financial Planner</h1>
+        <div className="flex items-center gap-2">
+          {savedScenarios.length > 0 && (
+            <button
+              onClick={() => { setCompareMode(!compareMode); if (compareMode) setCompareIds([]); }}
+              className={`text-xs border rounded px-2 py-1 transition-colors ${
+                compareMode
+                  ? 'border-accent text-accent'
+                  : 'border-surface-3 text-gray-500 hover:text-gray-300 hover:border-gray-600'
+              }`}
+            >
+              {compareMode ? 'Exit compare' : 'Compare'}
+            </button>
+          )}
+          <button
+            onClick={handleSaveScenario}
+            className="text-xs text-accent border border-accent/40 rounded px-2 py-1 hover:bg-accent/10 transition-colors"
+          >
+            Save scenario
+          </button>
+        </div>
       </div>
 
       {/* Days to Target — freelance only */}
@@ -517,6 +601,167 @@ export function Planner({ data, balances }: Props) {
           </div>
         )}
       </Panel>}
+
+      {/* Saved Scenarios */}
+      {savedScenarios.length > 0 && (
+        <div className="bg-surface-1 rounded-xl border border-surface-3 overflow-hidden">
+          <button
+            onClick={() => setScenariosOpen(!scenariosOpen)}
+            className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-gray-300 hover:text-white transition-colors"
+          >
+            <span className="font-medium">Saved Scenarios ({savedScenarios.length})</span>
+            <span className="text-gray-600 text-xs">{scenariosOpen ? '▲' : '▼'}</span>
+          </button>
+          {scenariosOpen && (
+            <div className="border-t border-surface-3 px-4 py-3 space-y-2">
+              {savedScenarios.map((sc) => (
+                <div
+                  key={sc.id}
+                  className="flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-surface-2 transition-colors group"
+                >
+                  {compareMode && (
+                    <input
+                      type="checkbox"
+                      checked={compareIds.includes(sc.id)}
+                      onChange={() => toggleCompareId(sc.id)}
+                      disabled={!compareIds.includes(sc.id) && compareIds.length >= 3}
+                      className="accent-accent flex-shrink-0"
+                    />
+                  )}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-200 truncate">{sc.name}</span>
+                      <span className="text-[10px] text-gray-600 flex-shrink-0">
+                        {new Date(sc.savedAt).toLocaleDateString()}
+                      </span>
+                    </div>
+                    <div className="flex gap-3 text-[11px] text-gray-500 font-mono mt-0.5">
+                      <span>{sc.metrics.mode === 'fulltime' ? 'FT' : 'FL'}</span>
+                      <span className={sc.metrics.monthlyCashFlowFull >= 0 ? 'text-positive' : 'text-negative'}>
+                        {fmt(sc.metrics.monthlyCashFlowFull)}/mo
+                      </span>
+                      <span>{fmt(sc.metrics.annualSavingsFull)}/yr</span>
+                      <span className="text-gray-600">{fmt(sc.metrics.monthlyExpenses)}/mo exp</span>
+                    </div>
+                  </div>
+                  {!compareMode && (
+                    <button
+                      onClick={() => handleLoadScenario(sc)}
+                      className="text-xs text-accent hover:text-accent/80 transition-colors opacity-0 group-hover:opacity-100"
+                    >
+                      Load
+                    </button>
+                  )}
+                  <button
+                    onClick={() => {
+                      if (deleteConfirm === sc.id) {
+                        removeScenario(sc.id);
+                        setDeleteConfirm(null);
+                        setCompareIds(prev => prev.filter(x => x !== sc.id));
+                      } else {
+                        setDeleteConfirm(sc.id);
+                        setTimeout(() => setDeleteConfirm(null), 3000);
+                      }
+                    }}
+                    className={`text-xs transition-colors opacity-0 group-hover:opacity-100 ${
+                      deleteConfirm === sc.id
+                        ? 'text-negative'
+                        : 'text-gray-600 hover:text-negative'
+                    }`}
+                  >
+                    {deleteConfirm === sc.id ? 'Confirm?' : '×'}
+                  </button>
+                </div>
+              ))}
+              {compareMode && compareIds.length > 0 && (
+                <p className="text-[10px] text-gray-600 pt-1">
+                  {compareIds.length}/3 selected — see comparison table below
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Compare Table */}
+      {compareMode && compareData.length > 0 && (
+        <Panel title="Scenario Comparison">
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-gray-500 text-[10px] uppercase tracking-wide">
+                  <th className="text-left py-1.5">Metric</th>
+                  <th className="text-right py-1.5 text-accent">Current</th>
+                  {compareData.map(sc => (
+                    <th key={sc.id} className="text-right py-1.5">{sc.name}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {([
+                  { label: 'Mode', key: 'mode', format: (v: string | number) => v === 'fulltime' ? 'Full-Time' : 'Freelance', noHighlight: true },
+                  { label: 'Day Rate', key: 'dayRate', format: (v: string | number) => fmt(v as number), hideIf: (m: SavedScenarioMetrics) => m.mode === 'fulltime' },
+                  { label: 'Salary', key: 'salary', format: (v: string | number) => fmt(v as number), hideIf: (m: SavedScenarioMetrics) => m.mode === 'freelance' },
+                  { label: 'Utilization', key: 'utilization', format: (v: string | number) => typeof v === 'number' ? fmtPct(v) : String(v), hideIf: (m: SavedScenarioMetrics) => m.mode === 'fulltime' },
+                  { label: 'Gross Annual', key: 'grossAnnual', format: (v: string | number) => fmt(v as number) },
+                  { label: 'Net Annual', key: 'netAnnual', format: (v: string | number) => fmt(v as number) },
+                  { label: 'Monthly Expenses', key: 'monthlyExpenses', format: (v: string | number) => fmt(v as number), invert: true },
+                  { label: 'Recurring Expenses', key: 'monthlyRecurringTotal', format: (v: string | number) => fmt(v as number), invert: true },
+                  { label: 'One-Time (Annual)', key: 'oneTimeAnnualTotal', format: (v: string | number) => fmt(v as number), invert: true },
+                  { label: 'Cash Flow (income only)', key: 'monthlyCashFlowIncomeOnly', format: (v: string | number) => fmt(v as number) },
+                  { label: 'Cash Flow (full picture)', key: 'monthlyCashFlowFull', format: (v: string | number) => fmt(v as number) },
+                  { label: 'Savings (income only)', key: 'annualSavingsIncomeOnly', format: (v: string | number) => fmt(v as number) },
+                  { label: 'Savings (full picture)', key: 'annualSavingsFull', format: (v: string | number) => fmt(v as number) },
+                  { label: 'Year-5 Net Worth', key: 'year5NetWorth', format: (v: string | number) => fmt(v as number) },
+                ] as {
+                  label: string;
+                  key: keyof SavedScenarioMetrics;
+                  format: (v: string | number) => string;
+                  noHighlight?: boolean;
+                  hideIf?: (m: SavedScenarioMetrics) => boolean;
+                  invert?: boolean;
+                }[]).map(row => {
+                  const allValues: { value: number; id: string }[] = [];
+                  const curVal = currentMetrics[row.key];
+                  if (typeof curVal === 'number') allValues.push({ value: curVal, id: '__current' });
+                  for (const sc of compareData) {
+                    const v = sc.metrics[row.key];
+                    if (typeof v === 'number') allValues.push({ value: v, id: sc.id });
+                  }
+                  const best = row.noHighlight ? null : (row.invert
+                    ? allValues.reduce((a, b) => a.value < b.value ? a : b, allValues[0])
+                    : allValues.reduce((a, b) => a.value > b.value ? a : b, allValues[0]));
+                  const worst = row.noHighlight ? null : (row.invert
+                    ? allValues.reduce((a, b) => a.value > b.value ? a : b, allValues[0])
+                    : allValues.reduce((a, b) => a.value < b.value ? a : b, allValues[0]));
+                  const allSame = allValues.every(v => v.value === allValues[0]?.value);
+
+                  function cellColor(id: string) {
+                    if (row.noHighlight || allSame) return 'text-gray-300';
+                    if (best?.id === id) return 'text-positive';
+                    if (worst?.id === id) return 'text-negative';
+                    return 'text-gray-300';
+                  }
+
+                  return (
+                    <tr key={row.key} className="border-t border-surface-3">
+                      <td className="py-1.5 text-gray-400 text-xs">{row.label}</td>
+                      <td className={`py-1.5 text-right font-mono ${cellColor('__current')}`}>
+                        {row.hideIf?.(currentMetrics) ? '—' : row.format(curVal)}
+                      </td>
+                      {compareData.map(sc => (
+                        <td key={sc.id} className={`py-1.5 text-right font-mono ${cellColor(sc.id)}`}>
+                          {row.hideIf?.(sc.metrics) ? '—' : row.format(sc.metrics[row.key])}
+                        </td>
+                      ))}
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </Panel>
+      )}
 
       {/* Sliders */}
       <Panel

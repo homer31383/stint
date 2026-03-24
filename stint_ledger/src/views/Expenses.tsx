@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState, useCallback, useRef } from 'react';
 import type { StintData, AccountBalances } from '../lib/types';
 import { StatCard } from '../components/StatCard';
 import { Panel } from '../components/Panel';
@@ -38,12 +38,134 @@ export function Expenses({ data, balances }: Props) {
     addRecurring,
     updateRecurring,
     removeRecurring,
+    reorderRecurring,
     addOneTime,
     updateOneTime,
     removeOneTime,
     setFullYearProjection,
     reset,
   } = useExpenseModel();
+
+  // --- Drag-to-reorder state ---
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
+  const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
+
+  // Touch drag state
+  const touchState = useRef<{
+    timer: ReturnType<typeof setTimeout> | null;
+    index: number | null;
+    startY: number;
+    active: boolean;
+    clone: HTMLElement | null;
+    rowHeight: number;
+  }>({ timer: null, index: null, startY: 0, active: false, clone: null, rowHeight: 0 });
+
+  const handleDragStart = useCallback((e: React.DragEvent, index: number) => {
+    setDragIndex(index);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/plain', String(index));
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '0.4';
+    }
+  }, []);
+
+  const handleDragEnd = useCallback((e: React.DragEvent) => {
+    if (e.currentTarget instanceof HTMLElement) {
+      e.currentTarget.style.opacity = '';
+    }
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }, []);
+
+  const handleDragOver = useCallback((e: React.DragEvent, index: number) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(index);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent, toIndex: number) => {
+    e.preventDefault();
+    const fromIndex = dragIndex;
+    if (fromIndex !== null && fromIndex !== toIndex) {
+      reorderRecurring(fromIndex, toIndex);
+    }
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }, [dragIndex, reorderRecurring]);
+
+  // Touch handlers for mobile long-press drag
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const cleanupTouch = useCallback(() => {
+    const ts = touchState.current;
+    if (ts.timer) { clearTimeout(ts.timer); ts.timer = null; }
+    if (ts.clone) { ts.clone.remove(); ts.clone = null; }
+    ts.active = false;
+    ts.index = null;
+    setDragIndex(null);
+    setDragOverIndex(null);
+  }, []);
+
+  const handleTouchStart = useCallback((e: React.TouchEvent, index: number) => {
+    const ts = touchState.current;
+    const touch = e.touches[0];
+    ts.startY = touch.clientY;
+    ts.index = index;
+    const row = (e.currentTarget as HTMLElement).closest('[data-drag-row]') as HTMLElement | null;
+    ts.rowHeight = row?.offsetHeight ?? 40;
+
+    ts.timer = setTimeout(() => {
+      ts.active = true;
+      setDragIndex(index);
+      // Create floating clone
+      if (row) {
+        const rect = row.getBoundingClientRect();
+        const clone = row.cloneNode(true) as HTMLElement;
+        clone.style.cssText = `position:fixed;top:${rect.top}px;left:${rect.left}px;width:${rect.width}px;z-index:50;opacity:0.9;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,0.4);border-radius:8px;background:#1e1e2e;`;
+        document.body.appendChild(clone);
+        ts.clone = clone;
+      }
+      // Prevent scroll while dragging
+      document.body.style.overflow = 'hidden';
+    }, 400);
+  }, []);
+
+  const handleTouchMove = useCallback((e: React.TouchEvent) => {
+    const ts = touchState.current;
+    if (!ts.active) {
+      // If moved too much before long-press fires, cancel
+      const dy = Math.abs(e.touches[0].clientY - ts.startY);
+      if (dy > 10 && ts.timer) { clearTimeout(ts.timer); ts.timer = null; }
+      return;
+    }
+    e.preventDefault();
+    const touch = e.touches[0];
+    // Move clone
+    if (ts.clone) {
+      const rect = ts.clone.getBoundingClientRect();
+      ts.clone.style.top = `${touch.clientY - rect.height / 2}px`;
+    }
+    // Determine which index we're over
+    if (listRef.current && ts.index !== null) {
+      const listRect = listRef.current.getBoundingClientRect();
+      const relativeY = touch.clientY - listRect.top;
+      const overIdx = Math.max(0, Math.min(
+        model.recurring.length - 1,
+        Math.floor(relativeY / ts.rowHeight)
+      ));
+      setDragOverIndex(overIdx);
+    }
+  }, [model.recurring.length]);
+
+  const handleTouchEnd = useCallback(() => {
+    const ts = touchState.current;
+    if (ts.timer) { clearTimeout(ts.timer); ts.timer = null; }
+    document.body.style.overflow = '';
+    if (ts.active && ts.index !== null && dragOverIndex !== null && ts.index !== dragOverIndex) {
+      reorderRecurring(ts.index, dragOverIndex);
+    }
+    cleanupTouch();
+  }, [dragOverIndex, reorderRecurring, cleanupTouch]);
 
   const fullYear = !!model.fullYearProjection;
 
@@ -460,7 +582,8 @@ export function Expenses({ data, balances }: Props) {
         </button>
       }>
         <div className="space-y-2">
-          <div className="hidden md:grid grid-cols-[1fr_1fr_120px_28px_32px] gap-2 text-[10px] text-gray-600 uppercase tracking-wide px-1">
+          <div className="hidden md:grid grid-cols-[24px_1fr_1fr_120px_28px_32px] gap-2 text-[10px] text-gray-600 uppercase tracking-wide px-1">
+            <span />
             <span>Category</span>
             <span>Name</span>
             <span className="text-right">Monthly</span>
@@ -468,14 +591,35 @@ export function Expenses({ data, balances }: Props) {
             <span />
           </div>
 
-          {model.recurring.map((r) => (
-            <RecurringRow
-              key={r.id}
-              expense={r}
-              onUpdate={(updates) => updateRecurring(r.id, updates)}
-              onRemove={() => removeRecurring(r.id)}
-            />
-          ))}
+          <div ref={listRef}>
+            {model.recurring.map((r, i) => (
+              <div
+                key={r.id}
+                data-drag-row
+                draggable
+                onDragStart={(e) => handleDragStart(e, i)}
+                onDragEnd={handleDragEnd}
+                onDragOver={(e) => handleDragOver(e, i)}
+                onDrop={(e) => handleDrop(e, i)}
+                className={`transition-all duration-150 ${
+                  dragIndex === i ? 'opacity-40' : ''
+                } ${
+                  dragOverIndex === i && dragIndex !== i
+                    ? 'border-t-2 border-accent'
+                    : 'border-t-2 border-transparent'
+                }`}
+              >
+                <RecurringRow
+                  expense={r}
+                  onUpdate={(updates) => updateRecurring(r.id, updates)}
+                  onRemove={() => removeRecurring(r.id)}
+                  onTouchStart={(e) => handleTouchStart(e, i)}
+                  onTouchMove={handleTouchMove}
+                  onTouchEnd={handleTouchEnd}
+                />
+              </div>
+            ))}
+          </div>
 
           {model.recurring.length > 0 && (
             <div className="flex justify-between items-center pt-2 border-t border-surface-3 px-1">
@@ -715,15 +859,31 @@ function BalanceCard({ label, current, projected, color, warn, danger }: {
 
 /* ---- Row components ---- */
 
-function RecurringRow({ expense, onUpdate, onRemove }: {
+function RecurringRow({ expense, onUpdate, onRemove, onTouchStart, onTouchMove, onTouchEnd }: {
   expense: RecurringExpense;
   onUpdate: (updates: Partial<Omit<RecurringExpense, 'id'>>) => void;
   onRemove: () => void;
+  onTouchStart?: (e: React.TouchEvent) => void;
+  onTouchMove?: (e: React.TouchEvent) => void;
+  onTouchEnd?: () => void;
 }) {
   const cat = getCategoryConfig(expense.category);
   const muted = !!expense.muted;
   return (
-    <div className={`grid grid-cols-[1fr_1fr_120px_28px_32px] gap-2 items-center px-1 ${muted ? 'opacity-40' : ''}`}>
+    <div className={`grid grid-cols-[24px_1fr_1fr_120px_28px_32px] gap-2 items-center px-1 ${muted ? 'opacity-40' : ''}`}>
+      <div
+        className="flex items-center justify-center cursor-grab active:cursor-grabbing text-gray-600 hover:text-gray-400 touch-none select-none"
+        title="Drag to reorder"
+        onTouchStart={onTouchStart}
+        onTouchMove={onTouchMove}
+        onTouchEnd={onTouchEnd}
+      >
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+          <rect x="2" y="2" width="8" height="1.5" rx="0.5" />
+          <rect x="2" y="5.25" width="8" height="1.5" rx="0.5" />
+          <rect x="2" y="8.5" width="8" height="1.5" rx="0.5" />
+        </svg>
+      </div>
       <div className="flex items-center gap-2">
         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cat.dot}`} />
         <select

@@ -134,11 +134,22 @@ export async function clearExpenseModel() {
   await db.delete('stint', 'expense-model');
 }
 
+export async function saveSavedScenarios(scenarios: Record<string, unknown>[]) {
+  const db = await getDB();
+  await db.put('stint', scenarios, 'saved-scenarios');
+}
+
+export async function loadSavedScenarios(): Promise<Record<string, unknown>[] | null> {
+  const db = await getDB();
+  return (await db.get('stint', 'saved-scenarios')) ?? null;
+}
+
 export interface SettingsBlob {
   plannerSettings: Record<string, unknown> | null;
   retirementSettings: Record<string, unknown> | null;
   expenseModel: Record<string, unknown> | null;
   detailedBalances: DetailedBalances | null;
+  savedScenarios?: Record<string, unknown>[] | null;
 }
 
 export async function gatherAllSettings(): Promise<SettingsBlob> {
@@ -148,6 +159,7 @@ export async function gatherAllSettings(): Promise<SettingsBlob> {
     retirementSettings: (await db.get('stint', 'retirement-settings')) ?? null,
     expenseModel: (await db.get('stint', 'expense-model')) ?? null,
     detailedBalances: (await db.get('accounts', 'balances')) ?? null,
+    savedScenarios: (await db.get('stint', 'saved-scenarios')) ?? null,
   };
 }
 
@@ -168,6 +180,9 @@ export async function applyAllSettings(blob: SettingsBlob) {
   }
   if (blob.detailedBalances != null) {
     await accounts.put(blob.detailedBalances, 'balances');
+  }
+  if (blob.savedScenarios != null) {
+    await stint.put(blob.savedScenarios, 'saved-scenarios');
   }
 
   await tx.done;

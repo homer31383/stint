@@ -10,7 +10,7 @@ Stint Ledger is a personal financial dashboard PWA for a freelance Creative Dire
 | Build | Vite 5, `tsc && vite build` |
 | Styling | Tailwind CSS 3 (custom dark theme in `tailwind.config.js`) |
 | Data source | Supabase (read-only from Stint tables, read-write for `ledger_sync`) |
-| Local storage | IndexedDB via `idb` library — balances, planner/retirement/expense settings |
+| Local storage | IndexedDB via `idb` library — balances, planner/retirement/expense/scenario settings |
 | PWA | `vite-plugin-pwa` (Workbox, service worker, installable) |
 | Fonts | IBM Plex Sans (UI), IBM Plex Mono (numbers) |
 | Charts | Recharts (dependency exists but views use custom bars) |
@@ -47,15 +47,16 @@ Vite is configured with `server: { host: '0.0.0.0' }` so the dev server is acces
     ├── lib/
     │   ├── types.ts                     All TypeScript interfaces (Stint data, balances, view IDs)
     │   ├── supabase.ts                  Supabase client, fetchStintData() fetches all 6 tables
-    │   ├── storage.ts                   IndexedDB helpers: save/load for cache, balances, settings, sync
+    │   ├── storage.ts                   IndexedDB helpers: save/load for cache, balances, settings, scenarios, sync
     │   ├── tax.ts                       estimateTaxes() (freelance SE+fed+state), estimateW2Taxes() (W-2)
     │   └── helpers.ts                   fmt(), fmtPct(), weekdaysElapsedYTD(), currentYear(), parseDate()
     ├── hooks/
     │   ├── useStintData.ts              Fetches Supabase → caches IDB → returns data/loading/error/refresh
     │   ├── useAccountBalances.ts        Loads DetailedBalances from IDB, computes aggregate AccountBalances
     │   ├── usePlannerSettings.ts        Planner slider state, persists to IDB, merge-on-load with defaults
-    │   ├── useExpenseModel.ts           Recurring/one-time expenses, persists to IDB, uuid() fallback
+    │   ├── useExpenseModel.ts           Recurring/one-time expenses, drag reorder, replace model, uuid() fallback
     │   ├── useRetirementSettings.ts     Retirement scenario sliders, persists to IDB
+    │   ├── useSavedScenarios.ts         Save/load/compare named planner+expense snapshots, persists to IDB
     │   └── useSettingsSync.ts           Push/pull settings to Supabase ledger_sync table
     ├── components/
     │   ├── Navigation.tsx               Desktop sidebar + mobile bottom tabs + settings sync UI
@@ -69,9 +70,9 @@ Vite is configured with `server: { host: '0.0.0.0' }` so the dev server is acces
         ├── Utilization.tsx              Year selector, monthly breakdown, by-client, by-service-type
         ├── Pipeline.tsx                 Booked/penciled deals, weighted pipeline value, priority tiers
         ├── Invoices.tsx                 Invoice list sorted by date, status breakdown, outstanding/overdue
-        ├── Planner.tsx                  Scenario modeler: freelance/FT toggle, sliders, 5-year projection
-        ├── Expenses.tsx                 Recurring + one-time expenses, financial impact simulation
-        ├── NetWorth.tsx                 Per-account editing, asset allocation, FI progress
+        ├── Planner.tsx                  Days-to-target, scenario modeler, saved scenarios, compare mode, 5-year projection
+        ├── Expenses.tsx                 Drag-to-reorder recurring, one-time expenses, mute toggle, financial impact
+        ├── NetWorth.tsx                 Per-account editing, asset allocation, FI progress, runway
         └── Retirement.tsx               Long-term projection age→95, portfolio longevity, safe withdrawal
 ```
 
@@ -84,7 +85,7 @@ useStintData hook → caches to IDB "stint" store
   ↓
 App.tsx passes data + balances as props to views
   ↓
-Views call local hooks (useExpenseModel, usePlannerSettings, etc.)
+Views call local hooks (useExpenseModel, usePlannerSettings, useSavedScenarios, etc.)
   ↓
 All local settings persist to IndexedDB
   ↓
@@ -93,10 +94,10 @@ Settings sync: PC pushes to ledger_sync table, phone pulls from it
 
 **Shared state (via App.tsx props):** `data` (StintData), `balances` (AccountBalances), `detailed` (DetailedBalances)
 
-**Local to each view:** Planner settings, expense model, retirement settings — each managed by their own hook with IDB persistence.
+**Local to each view:** Planner settings, expense model, saved scenarios, retirement settings — each managed by their own hook with IDB persistence.
 
 **IndexedDB stores:**
-- `stint` — cached Supabase data + `planner-settings` + `retirement-settings` + `expense-model`
+- `stint` — cached Supabase data + `planner-settings` + `retirement-settings` + `expense-model` + `saved-scenarios`
 - `accounts` — `balances` (DetailedBalances)
 
 ## Supabase Tables
@@ -125,8 +126,9 @@ RLS is disabled on all tables. If tables are recreated, run `ALTER TABLE <name> 
 | `useStintData` | `{ data, loading, syncing, error, refresh }` | IDB `stint` store (cache) |
 | `useAccountBalances` | `{ balances, detailed, setDetailed, loaded }` | IDB `accounts/balances` |
 | `usePlannerSettings(defaults)` | `{ settings, update, reset, loaded }` | IDB `stint/planner-settings` |
-| `useExpenseModel` | `{ model, addRecurring, updateRecurring, removeRecurring, addOneTime, updateOneTime, removeOneTime, setFullYearProjection, reset, loaded }` | IDB `stint/expense-model` |
+| `useExpenseModel` | `{ model, addRecurring, updateRecurring, removeRecurring, reorderRecurring, replaceModel, addOneTime, updateOneTime, removeOneTime, setFullYearProjection, reset, loaded }` | IDB `stint/expense-model` |
 | `useRetirementSettings` | `{ settings, update, reset, loaded }` | IDB `stint/retirement-settings` |
+| `useSavedScenarios` | `{ scenarios, loaded, save, remove }` | IDB `stint/saved-scenarios` |
 | `useSettingsSync` | `{ push, pull, pushing, pulling, lastPushed, lastPulled, serverUpdatedAt, error }` | `localStorage` for timestamps, Supabase for data |
 
 ## Views
@@ -137,10 +139,48 @@ RLS is disabled on all tables. If tables are recreated, run `ALTER TABLE <name> 
 | Utilization | StintData | Year selector, monthly/client/service breakdowns |
 | Pipeline | StintData | Weighted pipeline: booked 100%, pencil 70%/40%/20% |
 | Invoices | StintData | Status breakdown, sorted list, outstanding/overdue |
-| Planner | StintData, AccountBalances, usePlannerSettings | Freelance/FT toggle, scenario sliders, 5-year projection |
-| Expenses | StintData, AccountBalances, useExpenseModel, usePlannerSettings | Recurring/one-time editing, year-end simulation |
-| Net Worth | DetailedBalances, AccountBalances | Per-account editing, allocation chart, FI progress |
+| Planner | StintData, AccountBalances, usePlannerSettings, useExpenseModel, useSavedScenarios | Days-to-target, freelance/FT toggle, saved scenarios, compare mode, 5-year projection |
+| Expenses | StintData, AccountBalances, useExpenseModel, usePlannerSettings | Drag-to-reorder recurring, mute toggle, financial impact simulation |
+| Net Worth | DetailedBalances, AccountBalances | Per-account editing, allocation chart, FI progress, runway |
 | Retirement | AccountBalances, useRetirementSettings | Age→95 projection, depletion warnings, safe withdrawal |
+
+## Planner View — Sections (in order)
+
+1. **Days to Target** (freelance only) — target utilization slider, bookings/pencils toggles, progress bar (worked + committed + needed), status text
+2. **Saved Scenarios** — collapsible panel, load (with confirm), delete (with confirm), compare mode checkboxes
+3. **Scenario Comparison** (compare mode) — current + up to 3 saved scenarios side by side, 14 metrics, best green / worst red
+4. **Scenario Inputs** — vacation/holidays/sick (freelance) or salary/401k/match (FT), expenses, health insurance, return rates, day rate + utilization (freelance)
+5. **Financial Picture Toggle** — full picture (passive + investment) vs income-only
+6. **Monthly Snapshot** — gross, taxes, take-home, interest, returns, expenses, cash flow, NW growth
+7. **Employment Mode Toggle** — freelance / full-time
+8. **Annual View** — gross, net, savings, interest, returns, retirement growth, NW growth
+9. **Summary Callout** — cash flow health message (positive/marginal/negative)
+10. **Scenario Comparison Table** (freelance) — 8 predefined rate/utilization combos
+11. **Freelance vs FT Comparison** (FT mode) — side-by-side metrics with delta
+12. **5-Year Net Worth Projection** — stacked bar chart + inflation slider
+13. **Rollover IRA Deployment** — comparison at different nominal/real return rates
+
+## Saved Scenarios
+
+Each saved scenario captures a complete snapshot:
+- **PlannerSettings**: all slider values, toggles, employment mode
+- **ExpenseModel**: all recurring expenses (name, amount, category, muted), all one-time expenses (name, amount, month, muted)
+- **Computed metrics**: mode, day rate/salary, utilization, gross/net annual, monthly cash flow (income-only and full picture), annual savings (income-only and full picture), year-5 NW, monthly expenses, recurring total, one-time total
+
+**Loading a scenario** replaces both planner settings and the expense model (with confirmation dialog).
+
+**Comparing scenarios** shows a table with current + up to 3 saved scenarios. Each numeric metric highlights best (green) and worst (red). Expense rows use inverted highlighting (lower = better).
+
+Saved scenarios are stored in IDB under `saved-scenarios` and included in the settings sync blob.
+
+## Expenses View — Features
+
+- **Drag-to-reorder**: Desktop HTML5 DnD, mobile long-press (400ms) touch drag with floating clone
+- **Mute toggle**: Dim and exclude expenses from calculations without deleting
+- **Category system**: housing, insurance, utilities, food, transport, subscriptions, health, other (color-coded dots)
+- **Financial Impact**: Toggle between year-end projection (month-by-month simulation with account cascading) and one-time impact only
+- **Account cascade**: Deficits draw from HYS → Money Market → Checking
+- **Callouts**: Depletion warnings, HYS drawdown alerts, healthy status
 
 ## Net Worth Account Mapping (Critical)
 
@@ -167,31 +207,39 @@ ccDebt      = citiDoubleCash  (negative number)
 
 ### Freelance (`estimateTaxes`)
 - SE tax: 15.3% on 92.35% of gross
-- Federal: progressive brackets on (AGI − half SE − $15k deduction)
+- Federal: progressive brackets on (AGI - half SE - $15k deduction)
 - NY State: 7% flat on AGI
-- Brackets: 10%→$11,925 / 12%→$48,475 / 22%→$103,350 / 24%→$197,300 / 32%→$250,525 / 35%→$626,350 / 37% above
+- Brackets: 10%->$11,925 / 12%->$48,475 / 22%->$103,350 / 24%->$197,300 / 32%->$250,525 / 35%->$626,350 / 37% above
 
 ### Full-time (`estimateW2Taxes`)
 - FICA: 6.2% SS (capped $176,100) + 1.45% Medicare
 - 401k reduces taxable income (pre-tax)
-- Federal: same brackets on (gross − 401k − $15k deduction)
-- NY State: 7% on (gross − 401k)
+- Federal: same brackets on (gross - 401k - $15k deduction)
+- NY State: 7% on (gross - 401k)
 
 ## Settings Sync
 
 PC is source of truth. Push from PC, pull on phone.
 
-**Push:** `gatherAllSettings()` reads 4 IDB keys → upserts to `ledger_sync` row → saves push timestamp to `localStorage`
+**Push:** `gatherAllSettings()` reads 5 IDB keys -> upserts to `ledger_sync` row -> saves push timestamp to `localStorage`
 
-**Pull:** Reads `ledger_sync` row → `applyAllSettings()` writes to IDB → saves pull timestamp → `window.location.reload()`
+**Pull:** Reads `ledger_sync` row -> `applyAllSettings()` writes to IDB -> saves pull timestamp -> `window.location.reload()`
 
-**Synced keys:** `plannerSettings`, `retirementSettings`, `expenseModel`, `detailedBalances`
+**Synced keys:** `plannerSettings`, `retirementSettings`, `expenseModel`, `detailedBalances`, `savedScenarios`
 
 **Timestamps:** `lastPushed`/`lastPulled` in localStorage (survive reload), `serverUpdatedAt` fetched from Supabase on mount.
 
+## Retirement View
+
+- **Scenario inputs**: current age, retirement age, annual IRA/HSA contributions, pre/post-retirement return rates, inflation, monthly spending, Social Security
+- **Include Taxable toggle**: adds brokerage + checking + HYS + MM to projection (separate color in chart)
+- **Projection**: compound growth from current age to 95, accumulation phase -> distribution phase -> depletion
+- **Key outputs**: balance at retirement, portfolio longevity (years), safe withdrawal rate, depletion age
+- **Chart**: stacked bar with color-coded phases (green accumulation, blue distribution, red depleted)
+
 ## Known Gotchas
 
-1. **`uuid()` fallback** — `crypto.randomUUID()` is unavailable on older mobile Safari (< 15.4). The `uuid()` function in `useExpenseModel.ts` feature-detects and falls back to Math.random-based generation. Do NOT use `replace_all` on `crypto.randomUUID` — it will turn the call inside `uuid()` into a recursive self-call.
+1. **`uuid()` fallback** — `crypto.randomUUID()` is unavailable on older mobile Safari (< 15.4). The `uuid()` function in `useExpenseModel.ts` and `useSavedScenarios.ts` feature-detects and falls back to Math.random-based generation. Do NOT use `replace_all` on `crypto.randomUUID` — it will turn the call inside `uuid()` into a recursive self-call.
 
 2. **IndexedDB empty state** — On a fresh device, all IDB reads return null. Every hook initializes with defaults and merges IDB data on top. `useExpenseModel` validates `recurring`/`oneTime` are arrays before using them.
 
@@ -205,6 +253,8 @@ PC is source of truth. Push from PC, pull on phone.
 
 7. **Mobile bottom padding** — Main content uses `pb-28` to clear both the bottom tab bar and the sync bar above it.
 
+8. **Drag-to-reorder touch events** — Mobile drag uses `touch-none` CSS on the drag handle and `document.body.style.overflow = 'hidden'` during drag to prevent scroll interference. Cleanup restores overflow on touch end.
+
 ## Lessons Learned
 
 - **Never use `replace_all` on a string that also appears inside its own replacement.** The `uuid()` fallback was created by replacing all `crypto.randomUUID()` calls with `uuid()`, which also replaced the one *inside* the `uuid()` function body, creating infinite recursion. Always review the file after a `replace_all`.
@@ -212,11 +262,12 @@ PC is source of truth. Push from PC, pull on phone.
 - **Supabase errors are not Error instances.** `PostgrestError` is a plain object. `catch (e) { String(e) }` produces `[object Object]`. Always check for `.message` property.
 - **`useState` initializer functions run during render.** If the initializer throws (e.g., `crypto.randomUUID()` on an unsupported browser), it crashes the component during render — not in an effect where it could be caught.
 - **Test on actual mobile after any change to hooks used by views.** Desktop and mobile can have different API availability (`crypto.randomUUID`), different IDB state (fresh vs populated), and different layout behavior.
+- **PWA service worker caches aggressively.** After code changes, use Ctrl+Shift+R or unregister the service worker in DevTools > Application to see updates. Stale cache can make it look like changes weren't applied.
 
 ## GitHub
 
 Repository: `homer31383/stint-ledger` (private)
-Remote: `origin` → `https://github.com/homer31383/stint-ledger.git`
+Remote: `origin` -> `https://github.com/homer31383/stint-ledger.git`
 Branch: `main`
 
 ## Build Commands

@@ -166,6 +166,23 @@ export function useExpenseModel() {
     });
   }, []);
 
+  const reorderRecurring = useCallback((fromIndex: number, toIndex: number) => {
+    setModel(prev => {
+      const items = [...prev.recurring];
+      const [moved] = items.splice(fromIndex, 1);
+      items.splice(toIndex, 0, moved);
+      const next = { ...prev, recurring: items, lastUpdated: Date.now() };
+      persist(next);
+      return next;
+    });
+  }, []);
+
+  const replaceModel = useCallback((newModel: ExpenseModel) => {
+    const next = { ...newModel, lastUpdated: Date.now() };
+    setModel(next);
+    persist(next);
+  }, []);
+
   const reset = useCallback(async () => {
     const defaults = defaultsRef.current();
     setModel(defaults);
@@ -181,6 +198,8 @@ export function useExpenseModel() {
     addOneTime,
     updateOneTime,
     removeOneTime,
+    reorderRecurring,
+    replaceModel,
     setFullYearProjection,
     reset,
   };
