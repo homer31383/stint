@@ -1,28 +1,30 @@
-# Stint — Disaster Recovery & Full Rebuild Spec
+# Stint — Disaster Recovery & Full Rebuild Guide
 
 If you need to rebuild Stint from scratch, this document contains everything needed.
 
-## 1. Infrastructure
+## 1. Clone & Install
 
-### Supabase
-- **Project**: Shared with Axiom (same Supabase instance)
-- **Region**: Check Supabase dashboard
-- **Auth**: Email/password auth enabled
-- **All tables prefixed with `stint_`** to avoid collision with Axiom tables
+```bash
+git clone https://github.com/homer31383/stint.git
+cd stint
+npm install
+```
 
-### Vercel
-- **Project name**: stint
-- **Framework**: Vite
-- **Build command**: `npm run build`
-- **Output dir**: `dist`
-- **Environment variables** (set in Vercel dashboard):
-  - `VITE_SUPABASE_URL` — Supabase project URL
-  - `VITE_SUPABASE_ANON_KEY` — Supabase anon/public key
+## 2. Environment Variables
 
-### Domain
-- Production URL: `https://stint-iota.vercel.app`
+Create `.env.local` in the project root:
+```
+VITE_SUPABASE_URL=https://xxsjfeafpzzcmadyvuue.supabase.co
+VITE_SUPABASE_ANON_KEY=<get from Supabase dashboard → Settings → API → anon/public key>
+```
 
-## 2. Database Schema (run in order)
+The Supabase project is shared with Axiom. Log in at https://supabase.com/dashboard with the account that owns the `xxsjfeafpzzcmadyvuue` project.
+
+**For Vercel**, set the same two vars in the Vercel dashboard under Settings → Environment Variables.
+
+## 3. Database Setup (Supabase SQL Editor)
+
+Run these migrations **in order** in the Supabase SQL Editor. Skip any that have already been applied.
 
 ### Migration 001 — Tables, Indexes, RLS
 
@@ -138,158 +140,46 @@ UPDATE stint_invoices SET updated_at = created_at WHERE updated_at IS NULL;
 UPDATE stint_settings SET updated_at = extract(epoch from now()) * 1000 WHERE updated_at IS NULL;
 ```
 
-## 3. Data Model Relationships
+### Migration 004 — contacts, paid_date, pencil client_id & rates
 
-```
-stint_clients (1)
-  └──< stint_projects (many)     [client_id FK, ON DELETE CASCADE]
-         ├──< stint_time_entries  [project_id FK, ON DELETE CASCADE]
-         └──< stint_pencils       [project_id FK, ON DELETE CASCADE]
-  └──< stint_invoices            [client_id FK, ON DELETE SET NULL]
-
-stint_settings (single row, id = "default")
+```sql
+ALTER TABLE stint_clients ADD COLUMN IF NOT EXISTS contacts jsonb default '[]';
+ALTER TABLE stint_invoices ADD COLUMN IF NOT EXISTS paid_date text;
+ALTER TABLE stint_pencils ADD COLUMN IF NOT EXISTS client_id text;
+ALTER TABLE stint_pencils ADD COLUMN IF NOT EXISTS rates jsonb;
 ```
 
-## 4. Application Data
+## 4. Supabase Auth Setup
 
-### Default Settings
-```json
-{
-  "businessName": "Chris Bernier",
-  "businessEmail": "chris@chrisbernier.com",
-  "businessPhone": "413-219-9595",
-  "businessAddress": "162 Adelphi St Apt 2D\nBrooklyn NY 11205",
-  "bankName": "Santander Bank",
-  "routing": "231372691",
-  "accountNumber": "0116041492",
-  "invoicePrefix": "CB",
-  "nextInvoiceNumber": 2,
-  "paymentTerms": 30,
-  "hideDollars": true,
-  "serviceRates": {
-    "day_rate": 1200,
-    "shoot_attend": 1500,
-    "hourly": 150,
-    "overtime": 187.5,
-    "expense": 0
-  }
-}
+1. Go to Authentication → Providers → ensure Email is enabled
+2. Go to Authentication → Users → Create a user with your email and password
+3. The app uses `supabase.auth.signInWithPassword()` — no OAuth providers needed
+
+## 5. Vercel Setup
+
+1. Go to https://vercel.com → Import Git Repository → select `homer31383/stint`
+2. Framework preset: **Vite**
+3. Build command: `npm run build`
+4. Output directory: `dist`
+5. Add environment variables: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
+6. Deploy
+
+Or from CLI:
+```bash
+npm install -g vercel
+vercel login
+npx vercel --prod
 ```
 
-### Service Types
-| ID | Label | Default Rate | Billing |
-|----|-------|-------------|---------|
-| day_rate | Day Rate | $1,200 | Flat per day (divided by 8 for hourly cells) |
-| shoot_attend | Shoot Attend | $1,500 | Flat per day |
-| hourly | Hourly | $150 | Per hour |
-| overtime | Overtime | $187.50 | Per hour |
-| expense | Expense | $0 | Line item on invoices |
+Production URL: https://stint-iota.vercel.app
 
-### Pencil Priority Levels
-| Value | Label | Color |
-|-------|-------|-------|
-| 0 | Booked | Blue |
-| 1 | 1st Pencil | Green |
-| 2 | 2nd Pencil | Yellow |
-| 3 | 3rd Pencil | Red |
+## 6. Data Restoration
 
-### Invoice Statuses
-draft → sent → paid (or overdue)
-
-## 5. Design Spec
-
-### Theme Colors
-```
-bg:            #f8f7f4   (warm off-white)
-surface:       #ffffff   (cards)
-surfaceAlt:    #f2f1ee   (secondary backgrounds)
-border:        #e5e3de
-text:          #1a1a1a
-textSecondary: #5c5b57
-textTertiary:  #9c9a94
-green:         #2d8a4e   (primary accent)
-red:           #c53030
-yellow:        #b7791f
-blue:          #2b6cb0
-```
-
-### Typography
-- Font: Instrument Sans (Google Fonts)
-- Weights: 400, 500, 550, 600, 700, 750
-- Letter spacing: tight (-0.02em to -0.03em for headings)
-
-### Layout
-- Desktop: max-width 1100px centered, 52px header with tab nav
-- Mobile: bottom nav (4 tabs + "More" overflow), sheet-style modals from bottom
-- Breakpoint: 767px
-
-### PWA Manifest
-- Name: "Stint"
-- Theme color: #1a1a1a
-- Background: #f8f7f4
-- Display: standalone
-- Icons: 192px and 512px PNG
-
-## 6. Dependencies (package.json)
-
-```json
-{
-  "dependencies": {
-    "react": "^18.3.1",
-    "react-dom": "^18.3.1",
-    "@supabase/supabase-js": "^2.45.0"
-  },
-  "devDependencies": {
-    "@vitejs/plugin-react": "^4.3.1",
-    "vite": "^5.4.0",
-    "vite-plugin-pwa": "^0.20.0"
-  }
-}
-```
-
-## 7. Sync Architecture
-
-The sync hook (`src/hooks/useOfflineFirst.js`) follows a simple model:
-
-1. **Supabase is source of truth**
-2. **Pull** (mount + 10s interval): `SELECT *` from table, replace local state entirely (except local-only "personal" items)
-3. **Push** (immediate, inside setter): Every `setData()` call diffs prev vs next state, fires `upsert` for new/changed items and `delete` for removed items
-4. **localStorage**: Write-through mirror for offline fallback. On app load, state initializes from localStorage; Supabase pull replaces it within seconds
-5. **Case conversion**: JS uses camelCase, Supabase uses snake_case. Converted at the sync boundary by `camelToSnake`/`snakeToCamel`
-
-### Key: useOfflineFirst(key, fallback)
-Returns `[data, setData]`. Used for: clients, projects, time, pencils, invoices.
-
-### Key: useOfflineSettings(key, fallback)
-Returns `[data, setData]`. Used for the single settings row.
-
-## 8. Rebuild Steps
-
-1. **Create new Vercel project** linked to the GitHub repo
-2. **Set environment variables** in Vercel: `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`
-3. **Run migrations** in Supabase SQL Editor (001 → 002 → 003 in order)
-4. **Create a Supabase auth user** for yourself (Authentication → Users → Create User)
-5. `npm install && npm run build && npx vercel --prod`
-6. **Restore data** from most recent JSON export backup (Settings → Export JSON), or from Supabase directly if tables still exist
-
-## 9. Backup & Restore
-
-### Export
-Settings tab → "Export JSON" button. Downloads a JSON file with all data:
-```json
-{
-  "settings": {...},
-  "clients": [...],
-  "projects": [...],
-  "pencils": [...],
-  "timeEntries": [...],
-  "invoices": [...],
-  "exportedAt": "2026-03-05T..."
-}
-```
-
-### Restore (manual)
-To restore from a JSON backup, paste into browser console:
+### From JSON Export
+If you have a backup from Settings → Export JSON:
+1. Open the app in browser
+2. Open DevTools console
+3. Paste:
 ```js
 const backup = /* paste JSON here */;
 Object.entries(backup).forEach(([key, val]) => {
@@ -299,5 +189,52 @@ location.reload();
 ```
 The sync hook will push all localStorage data to Supabase on next load.
 
-### Supabase Direct
-All data is in the `stint_*` tables. You can query/export directly from the Supabase dashboard or use `pg_dump` targeting only stint-prefixed tables.
+### From Supabase directly
+If the `stint_*` tables still have data, the app will pull them automatically on load. No restoration needed.
+
+## 7. Verification Checklist
+
+After rebuild, verify:
+- [ ] App loads at production URL
+- [ ] Can log in with email/password
+- [ ] Dashboard shows stats (if data exists)
+- [ ] Time tab: can select project, click cells to log time
+- [ ] Pencils tab: can create booking, edit by clicking, see calendar
+- [ ] Invoices tab: can create invoice from time entries
+- [ ] Clients tab: can add client with contacts, edit
+- [ ] Reports tab: shows period breakdowns
+- [ ] Settings tab: bank details are masked, can toggle visibility
+- [ ] Search icon in header opens search modal
+- [ ] Data syncs to Supabase (check tables in dashboard)
+- [ ] PWA installs on mobile (Add to Home Screen)
+
+## 8. Data Model
+
+```
+stint_clients (1)
+  ├── contacts: [{name, role, email}]  (jsonb)
+  ├── service_rates: {day_rate: X, ...}  (jsonb)
+  └──< stint_projects (many)     [client_id FK, ON DELETE CASCADE]
+         ├──< stint_time_entries  [project_id FK, ON DELETE CASCADE]
+         └──< stint_pencils       [project_id FK, ON DELETE CASCADE]
+               └── rates: {day_rate: X, ...}  (jsonb, optional per-booking overrides)
+  └──< stint_invoices            [client_id FK, ON DELETE SET NULL]
+         └── paid_date: text  (ISO date when payment received)
+
+stint_settings (single row, id = "default")
+```
+
+## 9. Rollback
+
+To rollback a bad deploy:
+1. Go to Vercel dashboard → Deployments
+2. Find the last known good deployment
+3. Click "..." → "Promote to Production"
+
+To rollback code:
+```bash
+git log --oneline  # find the commit to revert to
+git revert <commit-hash>
+git push origin main
+npx vercel --prod
+```
