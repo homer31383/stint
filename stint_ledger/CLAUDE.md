@@ -2,26 +2,31 @@
 
 Stint Ledger is a personal financial dashboard PWA for a freelance Creative Director. It pulls real booking/income data from a shared Supabase backend (populated by the Stint time-tracking app), combines it with manually-entered account balances stored in IndexedDB, and provides financial modeling across 8 views: Dashboard, Utilization, Pipeline, Invoices, Planner, Expenses, Net Worth, and Retirement. The app runs on a home LAN, is installable on desktop and mobile, and works offline.
 
-## Tech Stack
+## Tech Stack (exact versions from package.json)
 
-| Layer | Tool |
-|-------|------|
-| Framework | React 18, TypeScript (strict) |
-| Build | Vite 5, `tsc && vite build` |
-| Styling | Tailwind CSS 3 (custom dark theme in `tailwind.config.js`) |
-| Data source | Supabase (read-only from Stint tables, read-write for `ledger_sync`) |
-| Local storage | IndexedDB via `idb` library — balances, planner/retirement/expense/scenario settings |
-| PWA | `vite-plugin-pwa` (Workbox, service worker, installable) |
-| Fonts | IBM Plex Sans (UI), IBM Plex Mono (numbers) |
-| Charts | Recharts (dependency exists but views use custom bars) |
+| Layer | Tool | Version |
+|-------|------|---------|
+| Framework | React + ReactDOM | ^18.3.1 |
+| Language | TypeScript (strict) | ^5.5.3 |
+| Build | Vite | ^5.4.0 |
+| React plugin | @vitejs/plugin-react | ^4.3.1 |
+| Styling | Tailwind CSS | ^3.4.4 |
+| CSS tooling | PostCSS + Autoprefixer | ^8.4.38 / ^10.4.19 |
+| Data source | @supabase/supabase-js | ^2.45.0 |
+| Local storage | idb (IndexedDB wrapper) | ^8.0.0 |
+| Charts | Recharts | ^2.12.0 |
+| PWA | vite-plugin-pwa (Workbox) | ^0.20.0 |
+| Type defs | @types/react, @types/react-dom | ^18.3.3 / ^18.3.0 |
+| Fonts | IBM Plex Sans (UI), IBM Plex Mono (numbers) | Google Fonts CDN |
 
 ## How to Run
 
 ```bash
 npm install
 npm run dev          # Dev server at http://localhost:5173 (LAN: http://192.168.29.152:5173)
-npm run build        # Production: tsc + vite build → dist/
+npm run build        # Production: tsc + vite build -> dist/
 npm run preview      # Preview production build
+npx tsc --noEmit     # Type check only
 ```
 
 Vite is configured with `server: { host: '0.0.0.0' }` so the dev server is accessible on the LAN for mobile testing. The `.env` file (gitignored) contains `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
@@ -41,17 +46,17 @@ Vite is configured with `server: { host: '0.0.0.0' }` so the dev server is acces
 │   └── icon-512.png                    PWA icon 512x512
 └── src/
     ├── main.tsx                         React entry point, mounts <App /> into #root
-    ├── App.tsx                          Root component: ErrorBoundary, Navigation, view router, hooks
+    ├── App.tsx                          Root: auth gate, ErrorBoundary, Navigation, view router, hooks
     ├── index.css                        Tailwind directives, scrollbar/slider styling, tap-highlight off
     ├── vite-env.d.ts                    Type defs for VITE_SUPABASE_URL/KEY env vars
     ├── lib/
     │   ├── types.ts                     All TypeScript interfaces (Stint data, balances, view IDs)
-    │   ├── supabase.ts                  Supabase client, fetchStintData() fetches all 6 tables
+    │   ├── supabase.ts                  Supabase client singleton, fetchStintData() fetches all 6 tables
     │   ├── storage.ts                   IndexedDB helpers: save/load for cache, balances, settings, scenarios, sync
     │   ├── tax.ts                       estimateTaxes() (freelance SE+fed+state), estimateW2Taxes() (W-2)
     │   └── helpers.ts                   fmt(), fmtPct(), weekdaysElapsedYTD(), currentYear(), parseDate()
     ├── hooks/
-    │   ├── useStintData.ts              Fetches Supabase → caches IDB → returns data/loading/error/refresh
+    │   ├── useStintData.ts              Fetches Supabase -> caches IDB -> returns data/loading/error/refresh
     │   ├── useAccountBalances.ts        Loads DetailedBalances from IDB, computes aggregate AccountBalances
     │   ├── usePlannerSettings.ts        Planner slider state, persists to IDB, merge-on-load with defaults
     │   ├── useExpenseModel.ts           Recurring/one-time expenses, drag reorder, replace model, uuid() fallback
@@ -59,7 +64,8 @@ Vite is configured with `server: { host: '0.0.0.0' }` so the dev server is acces
     │   ├── useSavedScenarios.ts         Save/load/compare named planner+expense snapshots, persists to IDB
     │   └── useSettingsSync.ts           Push/pull settings to Supabase ledger_sync table
     ├── components/
-    │   ├── Navigation.tsx               Desktop sidebar + mobile bottom tabs + settings sync UI
+    │   ├── Login.tsx                    Full-screen login form (email + password, error display)
+    │   ├── Navigation.tsx               Desktop sidebar + mobile bottom tabs + settings sync UI + sign out
     │   ├── Panel.tsx                    Card container with optional title and action slot
     │   ├── StatCard.tsx                 Label + large monospace value + optional sub text
     │   ├── Slider.tsx                   Range input with label, formatted value, optional subtitle
@@ -73,17 +79,19 @@ Vite is configured with `server: { host: '0.0.0.0' }` so the dev server is acces
         ├── Planner.tsx                  Days-to-target, scenario modeler, saved scenarios, compare mode, 5-year projection
         ├── Expenses.tsx                 Drag-to-reorder recurring, one-time expenses, mute toggle, financial impact
         ├── NetWorth.tsx                 Per-account editing, asset allocation, FI progress, runway
-        └── Retirement.tsx               Long-term projection age→95, portfolio longevity, safe withdrawal
+        └── Retirement.tsx               Long-term projection age->95, portfolio longevity, safe withdrawal
 ```
 
 ## Architecture & Data Flow
 
 ```
-Supabase (stint_* tables)
+Supabase Auth (email/password login)
+  ↓ session required
+Supabase (stint_* tables, RLS: authenticated only)
   ↓ fetchStintData()
-useStintData hook → caches to IDB "stint" store
+useStintData hook -> caches to IDB "stint" store
   ↓
-App.tsx passes data + balances as props to views
+App.tsx gates on auth session, then passes data + balances as props to views
   ↓
 Views call local hooks (useExpenseModel, usePlannerSettings, useSavedScenarios, etc.)
   ↓
@@ -92,11 +100,21 @@ All local settings persist to IndexedDB
 Settings sync: PC pushes to ledger_sync table, phone pulls from it
 ```
 
-**Shared state (via App.tsx props):** `data` (StintData), `balances` (AccountBalances), `detailed` (DetailedBalances)
+### Auth Flow (added March 2026)
+1. `App.tsx` calls `supabase.auth.getSession()` on mount and listens via `onAuthStateChange()`
+2. If no session: renders `<Login />` component (email + password form)
+3. If session exists: renders the full app (Navigation + views)
+4. Sign out button in Navigation sidebar calls `supabase.auth.signOut()`
+5. Supabase JS client handles session persistence in localStorage automatically
+6. Single user account created manually in Supabase Dashboard — no signup flow
 
-**Local to each view:** Planner settings, expense model, saved scenarios, retirement settings — each managed by their own hook with IDB persistence.
+### Shared State (via App.tsx props)
+`data` (StintData), `balances` (AccountBalances), `detailed` (DetailedBalances)
 
-**IndexedDB stores:**
+### Local to Each View
+Planner settings, expense model, saved scenarios, retirement settings — each managed by their own hook with IDB persistence.
+
+### IndexedDB Stores
 - `stint` — cached Supabase data + `planner-settings` + `retirement-settings` + `expense-model` + `saved-scenarios`
 - `accounts` — `balances` (DetailedBalances)
 
@@ -117,7 +135,21 @@ Settings sync: PC pushes to ledger_sync table, phone pulls from it
 |-------|------|
 | `ledger_sync` | Single row (`id='default'`), `data` jsonb blob of all settings, `updated_at` timestamp |
 
-RLS is disabled on all tables. If tables are recreated, run `ALTER TABLE <name> DISABLE ROW LEVEL SECURITY;` on each.
+### RLS Policy (applied March 2026)
+All tables have RLS enabled with `TO authenticated` policies:
+- `stint_*` tables: `Authenticated read` — SELECT only for authenticated users
+- `ledger_sync`: `Authenticated read/write` — ALL operations for authenticated users
+- Old `Allow anon read` policies dropped
+- Both Stint and Stint Ledger use Supabase Auth, so authenticated-only works for both
+- Axiom (separate app on same Supabase instance) uses different tables, unaffected
+
+## Supabase Auth Configuration
+
+- **Provider**: Email (enabled)
+- **Confirm email**: Disabled (single user)
+- **Enable signup**: Disabled (account created manually)
+- **User**: `shopping@chrisbernier.com` (created manually in dashboard, auto-confirmed)
+- **Shared with Stint app**: Same Supabase instance, same user account works for both
 
 ## Key Hooks
 
@@ -142,7 +174,7 @@ RLS is disabled on all tables. If tables are recreated, run `ALTER TABLE <name> 
 | Planner | StintData, AccountBalances, usePlannerSettings, useExpenseModel, useSavedScenarios | Days-to-target, freelance/FT toggle, saved scenarios, compare mode, 5-year projection |
 | Expenses | StintData, AccountBalances, useExpenseModel, usePlannerSettings | Drag-to-reorder recurring, mute toggle, financial impact simulation |
 | Net Worth | DetailedBalances, AccountBalances | Per-account editing, allocation chart, FI progress, runway |
-| Retirement | AccountBalances, useRetirementSettings | Age→95 projection, depletion warnings, safe withdrawal |
+| Retirement | AccountBalances, useRetirementSettings | Age->95 projection, depletion warnings, safe withdrawal |
 
 ## Planner View — Sections (in order)
 
@@ -179,7 +211,7 @@ Saved scenarios are stored in IDB under `saved-scenarios` and included in the se
 - **Mute toggle**: Dim and exclude expenses from calculations without deleting
 - **Category system**: housing, insurance, utilities, food, transport, subscriptions, health, other (color-coded dots)
 - **Financial Impact**: Toggle between year-end projection (month-by-month simulation with account cascading) and one-time impact only
-- **Account cascade**: Deficits draw from HYS → Money Market → Checking
+- **Account cascade**: Deficits draw from HYS -> Money Market -> Checking
 - **Callouts**: Depletion warnings, HYS drawdown alerts, healthy status
 
 ## Net Worth Account Mapping (Critical)
@@ -243,7 +275,7 @@ PC is source of truth. Push from PC, pull on phone.
 
 2. **IndexedDB empty state** — On a fresh device, all IDB reads return null. Every hook initializes with defaults and merges IDB data on top. `useExpenseModel` validates `recurring`/`oneTime` are arrays before using them.
 
-3. **RLS** — Supabase re-enables RLS when tables are recreated. Must run `ALTER TABLE ... DISABLE ROW LEVEL SECURITY;` on all 7 tables.
+3. **RLS** — RLS is now enabled on all tables with `TO authenticated` policies. If tables are recreated, you must re-apply RLS policies (see SQL in disaster recovery doc).
 
 4. **Select styling** — Native `<select>` elements need explicit `bg-surface-2 text-gray-300` classes or they render white-on-white in dark theme.
 
@@ -255,6 +287,10 @@ PC is source of truth. Push from PC, pull on phone.
 
 8. **Drag-to-reorder touch events** — Mobile drag uses `touch-none` CSS on the drag handle and `document.body.style.overflow = 'hidden'` during drag to prevent scroll interference. Cleanup restores overflow on touch end.
 
+9. **`.single()` vs `.maybeSingle()`** — Supabase `.single()` returns 406 when zero rows match. Use `.maybeSingle()` for queries that may return no rows (e.g., `ledger_sync` on first run before any push). Both are used in `useSettingsSync.ts`.
+
+10. **Auth-gated hooks** — `useStintData` and `useSettingsSync` run on mount regardless of auth state. `useSettingsSync` now checks for an active session before querying `ledger_sync`. Supabase data fetches will fail with RLS errors if no session exists, but the auth gate in `App.tsx` prevents views from rendering before auth completes.
+
 ## Lessons Learned
 
 - **Never use `replace_all` on a string that also appears inside its own replacement.** The `uuid()` fallback was created by replacing all `crypto.randomUUID()` calls with `uuid()`, which also replaced the one *inside* the `uuid()` function body, creating infinite recursion. Always review the file after a `replace_all`.
@@ -263,12 +299,14 @@ PC is source of truth. Push from PC, pull on phone.
 - **`useState` initializer functions run during render.** If the initializer throws (e.g., `crypto.randomUUID()` on an unsupported browser), it crashes the component during render — not in an effect where it could be caught.
 - **Test on actual mobile after any change to hooks used by views.** Desktop and mobile can have different API availability (`crypto.randomUUID`), different IDB state (fresh vs populated), and different layout behavior.
 - **PWA service worker caches aggressively.** After code changes, use Ctrl+Shift+R or unregister the service worker in DevTools > Application to see updates. Stale cache can make it look like changes weren't applied.
+- **`.single()` causes 406 on empty results.** Use `.maybeSingle()` for queries that might return zero rows. This bit us on the `ledger_sync` timestamp fetch when no settings had been pushed yet.
 
-## GitHub
+## Deployment
 
-Repository: `homer31383/stint-ledger` (private)
-Remote: `origin` -> `https://github.com/homer31383/stint-ledger.git`
-Branch: `main`
+- **Not yet deployed to Vercel** — deployment was discussed but not completed this session
+- **GitHub**: `homer31383/stint-ledger` (private)
+- **Remote**: `origin` -> `https://github.com/homer31383/stint-ledger.git`
+- **Branch**: `main`
 
 ## Build Commands
 

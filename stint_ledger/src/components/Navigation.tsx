@@ -32,6 +32,7 @@ interface NavigationProps {
   lastPulled?: string | null;
   serverUpdatedAt?: string | null;
   syncError?: string | null;
+  onSignOut?: () => void;
 }
 
 function fmtTs(iso: string | null | undefined) {
@@ -43,7 +44,7 @@ function fmtTs(iso: string | null | undefined) {
 
 export function Navigation({
   active, onNavigate, syncing, onRefresh, lastSynced,
-  onPush, onPull, pushing, pulling, lastPushed, lastPulled, serverUpdatedAt, syncError,
+  onPush, onPull, pushing, pulling, lastPushed, lastPulled, serverUpdatedAt, syncError, onSignOut,
 }: NavigationProps) {
   return (
     <>
@@ -114,6 +115,14 @@ export function Navigation({
               </div>
             )}
           </div>
+
+          {/* Sign out */}
+          <button
+            onClick={onSignOut}
+            className="w-full text-xs text-gray-500 hover:text-red-400 transition-colors"
+          >
+            Sign out
+          </button>
         </div>
       </nav>
 

@@ -1,9 +1,12 @@
-import React, { Component, useState } from 'react';
+import React, { Component, useState, useEffect } from 'react';
+import type { Session } from '@supabase/supabase-js';
 import type { ViewId } from './lib/types';
+import { supabase } from './lib/supabase';
 import { useStintData } from './hooks/useStintData';
 import { useAccountBalances } from './hooks/useAccountBalances';
 import { useSettingsSync } from './hooks/useSettingsSync';
 import { Navigation } from './components/Navigation';
+import { Login } from './components/Login';
 import { Dashboard } from './views/Dashboard';
 import { Utilization } from './views/Utilization';
 import { Pipeline } from './views/Pipeline';
@@ -54,10 +57,36 @@ class ErrorBoundary extends Component<
 const DEFAULT_MONTHLY_EXPENSES = 8750;
 
 export default function App() {
+  const [session, setSession] = useState<Session | null>(null);
+  const [authLoading, setAuthLoading] = useState(true);
   const [view, setView] = useState<ViewId>('dashboard');
   const { data, loading, syncing, error, refresh } = useStintData();
   const { balances, detailed, setDetailed, loaded } = useAccountBalances();
   const sync = useSettingsSync();
+
+  useEffect(() => {
+    supabase.auth.getSession().then(({ data: { session: s } }) => {
+      setSession(s);
+      setAuthLoading(false);
+    });
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+      setSession(s);
+    });
+    return () => subscription.unsubscribe();
+  }, []);
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-2xl font-bold text-white mb-2">Stint Ledger</div>
+          <div className="text-sm text-gray-500">Loading...</div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!session) return <Login />;
 
   if (loading && !loaded) {
     return (
@@ -90,6 +119,7 @@ export default function App() {
           lastPulled={sync.lastPulled}
           serverUpdatedAt={sync.serverUpdatedAt}
           syncError={sync.error}
+          onSignOut={() => supabase.auth.signOut()}
         />
 
         {/* Main content area */}

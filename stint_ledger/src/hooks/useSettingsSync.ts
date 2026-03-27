@@ -23,17 +23,19 @@ export function useSettingsSync() {
   const [serverUpdatedAt, setServerUpdatedAt] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  // Fetch server timestamp on mount
+  // Fetch server timestamp on mount (only when authenticated)
   useEffect(() => {
-    supabase
-      .from('ledger_sync')
-      .select('updated_at')
-      .eq('id', 'default')
-      .single()
-      .then(({ data, error: err }) => {
-        if (err) return; // table may not exist yet
-        if (data?.updated_at) setServerUpdatedAt(data.updated_at);
-      });
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (!session) return;
+      supabase
+        .from('ledger_sync')
+        .select('updated_at')
+        .eq('id', 'default')
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data?.updated_at) setServerUpdatedAt(data.updated_at);
+        });
+    });
   }, []);
 
   const push = useCallback(async () => {
@@ -66,7 +68,7 @@ export function useSettingsSync() {
         .from('ledger_sync')
         .select('data, updated_at')
         .eq('id', 'default')
-        .single();
+        .maybeSingle();
       if (err) throw err;
       if (!data?.data) throw new Error('No settings found on server');
       await applyAllSettings(data.data);
