@@ -12,33 +12,44 @@ export const BAND = 3; // percent: the default and reset band, y domain -BAND to
 const FULL_SESSION_POINTS = 78;
 
 // Color intensity scales with move magnitude inside the band: near 0% the
-// line and number sit at neutral gray, and they blend linearly toward the
-// desaturated up/down endpoints as the move approaches +-BAND. The endpoints
-// are deliberately calmer than the app's positive/negative tokens; maximum
-// intensity is still not an alarm color.
+// line and number sit at neutral gray and blend toward vibrant up/down
+// endpoints as the move approaches +-band. The ramp is eased (quadratic) so
+// the last stretch of the band gains saturation much faster than the first:
+// small moves stay calm while a move at or past the edge is unmistakable.
+// Clamped/pinned values cap at t = 1, so they always get maximum vibrancy.
 const NEUTRAL_RGB = [107, 114, 128] as const; // gray-500
-const UP_RGB = [124, 169, 143] as const; // #7ca98f
-const DOWN_RGB = [176, 138, 134] as const; // #b08a86
+const UP_RGB = [77, 199, 134] as const; // #4dc786, saturated but not neon
+const DOWN_RGB = [222, 112, 104] as const; // #de7068
 
-function magnitude(changePct: number, band: number): number {
-  return Math.min(Math.abs(changePct) / band, 1);
+function easedMagnitude(changePct: number, band: number): number {
+  const t = Math.min(Math.abs(changePct) / band, 1);
+  // Ease-in: at 70% of the band this yields ~0.5, leaving the other half of
+  // the color progression for the final 30%.
+  return t * t;
 }
 
 // Line and text color for a given percent change, scaled to the active band
 // so color intensity always matches how full the chart frame is.
 export function intensityColor(changePct: number, band: number = BAND): string {
-  const t = magnitude(changePct, band);
+  const e = easedMagnitude(changePct, band);
   const end = changePct >= 0 ? UP_RGB : DOWN_RGB;
-  const mix = NEUTRAL_RGB.map((n, i) => Math.round(n + (end[i] - n) * t));
+  const mix = NEUTRAL_RGB.map((n, i) => Math.round(n + (end[i] - n) * e));
   return `rgb(${mix[0]}, ${mix[1]}, ${mix[2]})`;
 }
 
-// Subtle row background wash on the same scale, topping out at 8% opacity.
+// Row background wash on the same eased scale, topping out at 13% opacity
+// at the band edge.
 export function intensityTint(changePct: number, band: number = BAND): string {
-  const t = magnitude(changePct, band);
+  const e = easedMagnitude(changePct, band);
   const end = changePct >= 0 ? UP_RGB : DOWN_RGB;
-  return `rgba(${end[0]}, ${end[1]}, ${end[2]}, ${(0.08 * t).toFixed(3)})`;
+  return `rgba(${end[0]}, ${end[1]}, ${end[2]}, ${(0.13 * e).toFixed(3)})`;
 }
+
+// Pin markers always render at full vibrancy in the direction they pinned:
+// they exist precisely because the line exceeded the band, even on a day
+// whose net change (and therefore line color) ends up small.
+const UP_MAX = `rgb(${UP_RGB[0]}, ${UP_RGB[1]}, ${UP_RGB[2]})`;
+const DOWN_MAX = `rgb(${DOWN_RGB[0]}, ${DOWN_RGB[1]}, ${DOWN_RGB[2]})`;
 
 const ZERO_LINE_COLOR = '#2e3542';
 const EDGE_PAD = 1.5; // keep the stroke inside the viewBox at the band edges
@@ -101,7 +112,7 @@ export function TickerSparkline({ series, changePct, band = BAND, width = 100, h
       {pinnedHigh && (
         <polygon
           points={`${width - 10},${EDGE_PAD + 4} ${width - 2},${EDGE_PAD + 4} ${width - 6},${EDGE_PAD}`}
-          fill={lineColor}
+          fill={UP_MAX}
         >
           <title>Pinned at +{band}%</title>
         </polygon>
@@ -109,7 +120,7 @@ export function TickerSparkline({ series, changePct, band = BAND, width = 100, h
       {pinnedLow && (
         <polygon
           points={`${width - 10},${height - EDGE_PAD - 4} ${width - 2},${height - EDGE_PAD - 4} ${width - 6},${height - EDGE_PAD}`}
-          fill={lineColor}
+          fill={DOWN_MAX}
         >
           <title>Pinned at -{band}%</title>
         </polygon>
