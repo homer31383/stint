@@ -1,10 +1,43 @@
-import { defineConfig } from 'vite';
+import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { fetchTickers, parseSymbols } from './api/_lib/yahoo';
+
+// Dev stand-in for the Vercel function in api/tickers.ts. A plain
+// server.proxy entry cannot fan one /api/tickers request out to several
+// Yahoo requests, so this middleware reuses the same shared fetch logic
+// and returns the same response shape as production. No caching in dev.
+function tickersDevApi(): Plugin {
+  return {
+    name: 'tickers-dev-api',
+    configureServer(server) {
+      server.middlewares.use('/api/tickers', (req, res) => {
+        const url = new URL(req.url ?? '/', 'http://localhost');
+        const symbols = parseSymbols(url.searchParams.get('symbols'));
+        res.setHeader('Content-Type', 'application/json');
+        if (symbols.length === 0) {
+          res.statusCode = 400;
+          res.end(JSON.stringify({ error: 'symbols query param required, comma separated' }));
+          return;
+        }
+        fetchTickers(symbols)
+          .then((tickers) => {
+            res.statusCode = 200;
+            res.end(JSON.stringify({ tickers }));
+          })
+          .catch((e) => {
+            res.statusCode = 502;
+            res.end(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }));
+          });
+      });
+    },
+  };
+}
 
 export default defineConfig({
   plugins: [
     react(),
+    tickersDevApi(),
     VitePWA({
       registerType: 'autoUpdate',
       includeAssets: ['favicon.svg'],
@@ -22,7 +55,7 @@ export default defineConfig({
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,svg,png,woff2}'],
+        globPatterns: ['**/*.{js,css,html,svg,png,woff2,webmanifest}'],
         runtimeCaching: [
           {
             urlPattern: /^https:\/\/xxsjfeafpzzcmadyvuue\.supabase\.co/,

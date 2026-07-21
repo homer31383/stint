@@ -1,0 +1,195 @@
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Tickers: fixed-band sparkline check</title>
+<style>
+  :root {
+    --bg: #0a0c10;
+    --panel: #12151c;
+    --border: #232836;
+    --text: #d1d5db;
+    --muted: #6b7280;
+    --faint: #4b5563;
+    --up: #7ca98f;
+    --down: #b08a86;
+    --zero: #2e3542;
+  }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    margin: 0;
+    padding: 32px 20px 64px;
+  }
+  .mono { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-variant-numeric: tabular-nums; }
+  main { max-width: 760px; margin: 0 auto; display: flex; flex-direction: column; gap: 28px; }
+  header h1 { font-size: 20px; font-weight: 600; margin: 0 0 6px; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); font-size: 14px; line-height: 1.5; max-width: 62ch; }
+  .scenario {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px 18px;
+  }
+  .scenario-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px; }
+  .scenario-head .name { font-size: 14px; font-weight: 600; }
+  .scenario-head .pct { font-size: 18px; font-weight: 600; }
+  .scenario-head .note { color: var(--muted); font-size: 12.5px; margin-left: auto; text-align: right; }
+  .pair { display: flex; gap: 24px; flex-wrap: wrap; }
+  .chart-block { display: flex; flex-direction: column; gap: 6px; }
+  .chart-block .caption { font-size: 11px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); }
+  svg { display: block; background: var(--bg); border-radius: 4px; }
+  .rowmock {
+    display: flex; align-items: center; gap: 14px;
+    padding: 10px 4px; border-bottom: 1px solid var(--border);
+  }
+  .rowmock:last-child { border-bottom: none; }
+  .rowmock .sym { width: 110px; }
+  .rowmock .sym .t { font-size: 13px; }
+  .rowmock .sym .l { font-size: 11px; color: var(--muted); }
+  .rowmock .nums { margin-left: auto; text-align: right; }
+  .rowmock .nums .p { font-size: 19px; font-weight: 600; }
+  .rowmock .nums .px { font-size: 11px; color: var(--muted); }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--faint); font-weight: 600; margin: 8px 0 0; }
+  footer { color: var(--faint); font-size: 12.5px; line-height: 1.5; max-width: 62ch; }
+</style>
+<main>
+  <header>
+    <h1>Fixed-band sparkline check</h1>
+    <p>
+      Same component math as <span class="mono">TickerSparkline.tsx</span> (BAND = 3).
+      Left chart is Yahoo-style auto-scaling, right chart is the fixed -3% to +3% band
+      with the always-on zero line. Note how the auto-scaled drift and selloff look identical.
+    </p>
+  </header>
+  <div id="scenarios"></div>
+  <h2>At actual in-app size (112 x 40)</h2>
+  <div class="scenario" id="rowmocks"></div>
+  <footer>
+    Values past the band clamp to the edge and show a small pin triangle at the right.
+    Sessions shorter than 78 bars draw only the left portion of the frame, so the line
+    grows across the day instead of stretching.
+  </footer>
+</main>
+<script>
+  // Mirror of the constants in TickerSparkline.tsx
+  const BAND = 3;
+  const FULL_SESSION_POINTS = 78;
+  const UP = '#7ca98f', DOWN = '#b08a86', ZERO = '#2e3542';
+
+  function mulberry32(seed) {
+    return function () {
+      seed |= 0; seed = (seed + 0x6D2B79F5) | 0;
+      let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+
+  // Random walk from 0 toward target with controlled wobble, deterministic per seed.
+  function makeSeries(target, vol, n, seed) {
+    const rnd = mulberry32(seed);
+    const out = [];
+    let noise = 0;
+    for (let i = 0; i < n; i++) {
+      const t = i / (n - 1);
+      const ease = t * t * (3 - 2 * t);
+      noise += (rnd() - 0.5) * vol;
+      noise *= 0.96;
+      out.push(target * ease + noise);
+    }
+    return out;
+  }
+
+  function polyPoints(series, width, height, lo, hi, denomPoints) {
+    const pad = 3;
+    const denom = Math.max(series.length, denomPoints) - 1;
+    return series.map((v, i) => {
+      const x = (i / denom) * width;
+      const c = Math.max(lo, Math.min(hi, v));
+      const y = (height - 2 * pad) * (1 - (c - lo) / (hi - lo)) + pad;
+      return x.toFixed(1) + ',' + y.toFixed(1);
+    }).join(' ');
+  }
+
+  function chartSVG(series, mode, tone, width, height, sw) {
+    let lo, hi, denomPoints;
+    if (mode === 'fixed') {
+      lo = -BAND; hi = BAND; denomPoints = FULL_SESSION_POINTS;
+    } else {
+      // Yahoo style: domain hugs the data
+      const mn = Math.min(...series), mx = Math.max(...series);
+      const span = (mx - mn) || 1;
+      lo = mn - span * 0.06; hi = mx + span * 0.06;
+      denomPoints = series.length;
+    }
+    const color = tone === 'up' ? UP : DOWN;
+    let s = '<svg width="' + width + '" height="' + height + '" viewBox="0 0 ' + width + ' ' + height + '">';
+    if (lo <= 0 && hi >= 0) {
+      const pad = 3;
+      const zy = (height - 2 * pad) * (1 - (0 - lo) / (hi - lo)) + pad;
+      s += '<line x1="0" y1="' + zy.toFixed(1) + '" x2="' + width + '" y2="' + zy.toFixed(1) + '" stroke="' + ZERO + '" stroke-width="1"/>';
+    }
+    if (series.length >= 2) {
+      s += '<polyline points="' + polyPoints(series, width, height, lo, hi, denomPoints) +
+        '" fill="none" stroke="' + color + '" stroke-width="' + sw + '" stroke-linejoin="round" stroke-linecap="round"/>';
+    }
+    if (mode === 'fixed') {
+      if (series.some(v => v > BAND)) s += '<polygon points="' + (width - 16) + ',11 ' + (width - 4) + ',11 ' + (width - 10) + ',4" fill="' + color + '"/>';
+      if (series.some(v => v < -BAND)) s += '<polygon points="' + (width - 16) + ',' + (height - 11) + ' ' + (width - 4) + ',' + (height - 11) + ' ' + (width - 10) + ',' + (height - 4) + '" fill="' + color + '"/>';
+    }
+    return s + '</svg>';
+  }
+
+  const SCENARIOS = [
+    { name: 'Quiet drift', target: 0.12, vol: 0.05, n: 78, seed: 11, note: 'the day that should finally look flat' },
+    { name: 'Ordinary down day', target: -0.85, vol: 0.09, n: 78, seed: 22, note: '' },
+    { name: 'Strong rally', target: 2.3, vol: 0.14, n: 78, seed: 33, note: '' },
+    { name: 'Selloff, past the band', target: -4.2, vol: 0.2, n: 78, seed: 44, note: 'clamped, pin marker bottom right' },
+    { name: 'Mid-session, 2 hours in', target: 0.6, vol: 0.1, n: 25, seed: 55, note: 'partial day draws partial width' },
+  ];
+
+  const scRoot = document.getElementById('scenarios');
+  scRoot.style.display = 'flex';
+  scRoot.style.flexDirection = 'column';
+  scRoot.style.gap = '14px';
+  for (const sc of SCENARIOS) {
+    const series = makeSeries(sc.target, sc.vol, sc.n, sc.seed);
+    const last = series[series.length - 1];
+    const tone = last >= 0 ? 'up' : 'down';
+    const color = tone === 'up' ? UP : DOWN;
+    const div = document.createElement('div');
+    div.className = 'scenario';
+    div.innerHTML =
+      '<div class="scenario-head">' +
+      '<span class="name">' + sc.name + '</span>' +
+      '<span class="pct mono" style="color:' + color + '">' + (last >= 0 ? '+' : '') + last.toFixed(2) + '%</span>' +
+      (sc.note ? '<span class="note">' + sc.note + '</span>' : '') +
+      '</div>' +
+      '<div class="pair">' +
+      '<div class="chart-block"><span class="caption">Auto-scaled (Yahoo)</span>' + chartSVG(series, 'auto', tone, 240, 84, 2) + '</div>' +
+      '<div class="chart-block"><span class="caption">Fixed -3% to +3%</span>' + chartSVG(series, 'fixed', tone, 240, 84, 2) + '</div>' +
+      '</div>';
+    scRoot.appendChild(div);
+  }
+
+  const MOCK = [
+    { sym: '^GSPC', label: 'S&P 500', price: '6,412.30', sc: SCENARIOS[0] },
+    { sym: '^IXIC', label: 'Nasdaq', price: '21,880.10', sc: SCENARIOS[2] },
+    { sym: 'VTI', label: 'Total US Market', price: '312.45', sc: SCENARIOS[1] },
+    { sym: 'VXUS', label: 'Total Intl Market', price: '68.92', sc: SCENARIOS[3] },
+  ];
+  const rmRoot = document.getElementById('rowmocks');
+  for (const m of MOCK) {
+    const series = makeSeries(m.sc.target, m.sc.vol, m.sc.n, m.sc.seed);
+    const last = series[series.length - 1];
+    const tone = last >= 0 ? 'up' : 'down';
+    const color = tone === 'up' ? UP : DOWN;
+    const div = document.createElement('div');
+    div.className = 'rowmock';
+    div.innerHTML =
+      '<div class="sym"><div class="t mono">' + m.sym + '</div><div class="l">' + m.label + '</div></div>' +
+      '<div class="nums"><div class="p mono" style="color:' + color + '">' + (last >= 0 ? '+' : '') + last.toFixed(2) + '%</div>' +
+      '<div class="px mono">' + m.price + '</div></div>' +
+      chartSVG(series, 'fixed', tone, 112, 40, 1.5);
+    rmRoot.appendChild(div);
+  }
+</script>

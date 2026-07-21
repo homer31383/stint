@@ -1,0 +1,15 @@
+{
+  "name": "Tickers",
+  "short_name": "Tickers",
+  "description": "Fixed scale market watch",
+  "start_url": "/tickers",
+  "scope": "/tickers",
+  "display": "standalone",
+  "background_color": "#0a0c10",
+  "theme_color": "#0a0c10",
+  "icons": [
+    { "src": "/tickers-icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/tickers-icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/tickers-icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ]
+}
