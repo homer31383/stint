@@ -8,7 +8,17 @@
       "Bash(tasklist:*)",
       "Bash(netstat:*)",
       "Bash(wmic process:*)",
-      "Bash(powershell:*)"
+      "Bash(powershell:*)",
+      "Bash(npx serve:*)",
+      "Bash(gh:*)",
+      "Bash(node:*)",
+      "Bash(python:*)",
+      "Bash(vercel --version)",
+      "Bash(npm i:*)",
+      "Bash(find /d/AI/Claude/TimeSheet/stint -name *supabase* -o -name *client*)",
+      "Bash(grep:*)",
+      "Bash(echo \"exit=$?\")",
+      "Bash(Select-Object -Last 20)"
     ]
   }
 }

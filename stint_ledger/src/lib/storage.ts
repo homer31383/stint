@@ -1,6 +1,6 @@
 import { openDB, type IDBPDatabase } from 'idb';
 import type { AccountBalances, DetailedBalances, StintData } from './types';
-import { DEFAULT_DETAILED } from './types';
+import { DEFAULT_DETAILED, DEFAULT_HOLDINGS } from './types';
 
 const DB_NAME = 'stint-ledger';
 const DB_VERSION = 1;
@@ -86,7 +86,26 @@ export async function loadDetailedBalances(): Promise<DetailedBalances | null> {
     return migrated;
   }
 
-  return saved as DetailedBalances;
+  const result = saved as DetailedBalances;
+
+  // Migration: seed default fund holdings for any holdings-enabled key that
+  // has never been populated. An explicitly empty array (user cleared it) is
+  // preserved — only `undefined` triggers a seed.
+  const existing = result.holdings ?? {};
+  let mutated = result.holdings === undefined;
+  const merged = { ...existing };
+  for (const key of ['nonRetirement', 'traditionalIRA', 'rolloverIRA'] as const) {
+    if (merged[key] === undefined) {
+      merged[key] = DEFAULT_HOLDINGS[key];
+      mutated = true;
+    }
+  }
+  if (mutated) {
+    result.holdings = merged;
+    await db.put('accounts', result, 'balances');
+  }
+
+  return result;
 }
 
 export async function savePlannerSettings(settings: Record<string, unknown>) {
@@ -144,12 +163,23 @@ export async function loadSavedScenarios(): Promise<Record<string, unknown>[] | 
   return (await db.get('stint', 'saved-scenarios')) ?? null;
 }
 
+export async function saveExportProfile(profile: Record<string, unknown>) {
+  const db = await getDB();
+  await db.put('stint', profile, 'export-profile');
+}
+
+export async function loadExportProfile(): Promise<Record<string, unknown> | null> {
+  const db = await getDB();
+  return (await db.get('stint', 'export-profile')) ?? null;
+}
+
 export interface SettingsBlob {
   plannerSettings: Record<string, unknown> | null;
   retirementSettings: Record<string, unknown> | null;
   expenseModel: Record<string, unknown> | null;
   detailedBalances: DetailedBalances | null;
   savedScenarios?: Record<string, unknown>[] | null;
+  exportProfile?: Record<string, unknown> | null;
 }
 
 export async function gatherAllSettings(): Promise<SettingsBlob> {
@@ -160,6 +190,7 @@ export async function gatherAllSettings(): Promise<SettingsBlob> {
     expenseModel: (await db.get('stint', 'expense-model')) ?? null,
     detailedBalances: (await db.get('accounts', 'balances')) ?? null,
     savedScenarios: (await db.get('stint', 'saved-scenarios')) ?? null,
+    exportProfile: (await db.get('stint', 'export-profile')) ?? null,
   };
 }
 
@@ -183,6 +214,9 @@ export async function applyAllSettings(blob: SettingsBlob) {
   }
   if (blob.savedScenarios != null) {
     await stint.put(blob.savedScenarios, 'saved-scenarios');
+  }
+  if (blob.exportProfile != null) {
+    await stint.put(blob.exportProfile, 'export-profile');
   }
 
   await tx.done;

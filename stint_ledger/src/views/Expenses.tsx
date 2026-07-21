@@ -184,10 +184,12 @@ export function Expenses({ data, balances }: Props) {
       vacationDays: 10,
       holidays: 10,
       sickDays: 5,
-      monthlyExpenses: 8750,
+      monthlyExpensesFreelance: 7150,
+      monthlyExpensesFullTime: 7150,
       healthIns: DEFAULT_HEALTH_INS,
+      ftHealthIns: 300,
       equityReturn: 0.07,
-      rolloverReturn: 0.04,
+      rolloverReturn: 0.07,
       cashReturn: 0.04,
       inflationRate: 0.03,
       fullFinancialPicture: true,
@@ -211,6 +213,17 @@ export function Expenses({ data, balances }: Props) {
     () => activeRecurring.reduce((s, r) => s + r.amount, 0),
     [activeRecurring],
   );
+
+  // Planner's health insurance ($$ from Planner settings) — included in summary/simulation
+  // unless the user already has a recurring expense named "health insurance" (avoid double-counting)
+  const healthInsFromPlanner = (planner.employmentMode ?? 'freelance') === 'fulltime'
+    ? (planner.ftHealthIns ?? 300)
+    : planner.healthIns;
+  const healthInsAlreadyRecurring = useMemo(
+    () => activeRecurring.some(r => /health\s*insurance/i.test(r.name)),
+    [activeRecurring],
+  );
+  const effectiveHealthIns = healthInsAlreadyRecurring ? 0 : healthInsFromPlanner;
 
   const mutedMonthlyRecurring = useMemo(
     () => model.recurring.filter(r => r.muted).reduce((s, r) => s + r.amount, 0),
@@ -332,7 +345,7 @@ export function Expenses({ data, balances }: Props) {
 
     for (let i = 0; i < monthsRemaining; i++) {
       const month = curMonth + i;
-      const recurringOut = totalMonthlyRecurring;
+      const recurringOut = totalMonthlyRecurring + effectiveHealthIns;
       const oneTimeOut = activeOneTime
         .filter(e => e.month === month)
         .reduce((s, e) => s + e.amount, 0);
@@ -413,7 +426,7 @@ export function Expenses({ data, balances }: Props) {
       hysDrawdownPct,
       depletedAccount, depletedMonth,
     };
-  }, [balances, incomeCalc, planner, totalMonthlyRecurring, activeOneTime]);
+  }, [balances, incomeCalc, planner, totalMonthlyRecurring, activeOneTime, effectiveHealthIns]);
 
   // Callout status
   const callout = useMemo(() => {
@@ -498,7 +511,7 @@ export function Expenses({ data, balances }: Props) {
   }, [activeOneTime, balances]);
 
   // Income summary values
-  const monthlyCashFlow = incomeCalc.netMonthly + (planner.fullFinancialPicture ? incomeCalc.monthlyInterest + incomeCalc.monthlyInvestmentReturns : 0) - totalMonthlyRecurring;
+  const monthlyCashFlow = incomeCalc.netMonthly + (planner.fullFinancialPicture ? incomeCalc.monthlyInterest + incomeCalc.monthlyInvestmentReturns : 0) - totalMonthlyRecurring - effectiveHealthIns;
   const activeOneTimeAnnual = activeOneTime.reduce((s, e) => s + e.amount, 0);
 
   // Pick the active impact data based on toggle
@@ -674,9 +687,15 @@ export function Expenses({ data, balances }: Props) {
       <Panel title="Expense Summary">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard label="Monthly Recurring" value={fmt(totalMonthlyRecurring)} color="text-negative" />
-          <StatCard label="Annual Total" value={fmt(annualTotal)} color="text-negative" />
-          <StatCard label="Avg Monthly" value={fmt(Math.round(avgMonthly))} color="text-caution" sub="incl. one-time" />
-          <StatCard label="Highest Month" value={fmt(highestMonth.total)} color="text-negative" sub={highestMonth.label} />
+          <StatCard
+            label="Health Insurance"
+            value={fmt(healthInsFromPlanner)}
+            color="text-negative"
+            sub={healthInsAlreadyRecurring ? 'In recurring above' : 'From Planner'}
+          />
+          <StatCard label="Annual Total" value={fmt(annualTotal + effectiveHealthIns * 12)} color="text-negative" />
+          <StatCard label="Avg Monthly" value={fmt(Math.round(avgMonthly + effectiveHealthIns))} color="text-caution" sub="incl. one-time" />
+          <StatCard label="Highest Month" value={fmt(highestMonth.total + effectiveHealthIns)} color="text-negative" sub={highestMonth.label} />
         </div>
         {totalMutedMonthly > 0 && (
           <div className="text-xs text-gray-600 mt-3 px-1">

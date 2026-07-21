@@ -13,7 +13,13 @@ const fmtWhole = (n) => new Intl.NumberFormat("en-US", { style: "currency", curr
 const fmtDate = (d) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 const fmtDateShort = (d) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" });
 const fmtDateFull = (d) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-const toISO = (d) => new Date(d).toISOString().split("T")[0];
+const toISO = (d) => {
+  const x = new Date(d);
+  const y = x.getFullYear();
+  const m = String(x.getMonth() + 1).padStart(2, "0");
+  const day = String(x.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
 const todayISO = () => toISO(new Date());
 const fmtTimer = (s) => {
   const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60;
@@ -273,6 +279,7 @@ export default function App() {
   const [pencils, setPencils] = useOfflineFirst("pencils", []);
   const [timeEntries, setTimeEntries] = useOfflineFirst("time", []);
   const [invoices, setInvoices] = useOfflineFirst("invoices", []);
+  const [dayNotes, setDayNotes] = useOfflineFirst("dayNotes", []);
   const [settings, setSettings] = useOfflineSettings("settings", DEFAULT_SETTINGS);
   const [activeTimer, setActiveTimer] = useState(() => load("timer", null));
   const [elapsed, setElapsed] = useState(0);
@@ -637,11 +644,11 @@ export default function App() {
       {/* MAIN */}
       <main style={{ flex: 1, overflow: "auto", padding: isMobile ? "16px 0" : "28px 32px", paddingBottom: isMobile ? "72px" : undefined, maxWidth: isMobile ? "100%" : "1100px", width: "100%", margin: "0 auto" }}>
         {tab === "dashboard" && <Dashboard {...{clients, projects, pencils, timeEntries, setTimeEntries, invoices, settings, setTab, getClient, getProject, getRate, isMobile}} />}
-        {tab === "time" && <Time {...{timeEntries, setTimeEntries, projects, clients, pencils, settings, activeTimer, startTimer, stopTimer, elapsed, getClient, getProject, getRate, isMobile}} />}
+        {tab === "time" && <Time {...{timeEntries, setTimeEntries, projects, clients, pencils, settings, dayNotes, setDayNotes, activeTimer, startTimer, stopTimer, elapsed, getClient, getProject, getRate, isMobile}} />}
         {tab === "pencils" && <Pencils {...{pencils, setPencils, projects, setProjects, clients, setClients, getClient, getProject, settings, isMobile}} />}
-        {tab === "invoices" && <Invoices {...{invoices, setInvoices, timeEntries, projects, clients, settings, setSettings, getClient, getProject, isMobile}} />}
+        {tab === "invoices" && <Invoices {...{invoices, setInvoices, timeEntries, projects, clients, pencils, settings, setSettings, getClient, getProject, getRate, isMobile}} />}
         {tab === "clients" && <Clients {...{clients, setClients, projects, setProjects, settings, timeEntries, pencils, invoices, getClient, getProject, getRate, isMobile}} />}
-        {tab === "reports" && <Reports {...{timeEntries, projects, clients, invoices, settings, getClient, getProject, isMobile}} />}
+        {tab === "reports" && <Reports {...{timeEntries, projects, clients, pencils, invoices, settings, getClient, getProject, isMobile}} />}
         {tab === "settings" && <Settings {...{settings, setSettings, clients, projects, pencils, timeEntries, invoices, isMobile, session}} />}
       </main>
 
@@ -893,13 +900,38 @@ function Muted({ children }) {
 // ============================================================
 // TIME TRACKING
 // ============================================================
-function Time({ timeEntries, setTimeEntries, projects, clients, pencils, settings, activeTimer, startTimer, stopTimer, elapsed, getClient, getProject, getRate, isMobile }) {
+function Time({ timeEntries, setTimeEntries, projects, clients, pencils, settings, dayNotes, setDayNotes, activeTimer, startTimer, stopTimer, elapsed, getClient, getProject, getRate, isMobile }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [activeProject, setActiveProject] = useState(null); // { projectId, serviceType }
   const [selectedClient, setSelectedClient] = useState(""); // filter projects by client, "__all__" = show all
   const showAllProjects = selectedClient === "__all__";
   const [noteModal, setNoteModal] = useState(null); // { entryIds, date, startHour, endHour, projectId }
   const [noteText, setNoteText] = useState("");
+  const [dayNoteModal, setDayNoteModal] = useState(null); // { date }
+  const [dayNoteText, setDayNoteText] = useState("");
+  const dayNoteMap = useMemo(() => {
+    const m = {};
+    (dayNotes || []).forEach(n => { if (n && n.id) m[n.id] = n.note || ""; });
+    return m;
+  }, [dayNotes]);
+  const getDayNote = (date) => dayNoteMap[date] || "";
+  const openDayNote = (date) => { setDayNoteText(getDayNote(date)); setDayNoteModal({ date }); };
+  const saveDayNote = () => {
+    if (!dayNoteModal) return;
+    const date = dayNoteModal.date;
+    const text = dayNoteText.trim();
+    setDayNotes(prev => {
+      const others = (prev || []).filter(n => n.id !== date);
+      return text ? [...others, { id: date, note: text }] : others;
+    });
+    setDayNoteModal(null); setDayNoteText("");
+  };
+  const clearDayNote = () => {
+    if (!dayNoteModal) return;
+    const date = dayNoteModal.date;
+    setDayNotes(prev => (prev || []).filter(n => n.id !== date));
+    setDayNoteModal(null); setDayNoteText("");
+  };
   const [undoStack, setUndoStack] = useState([]); // previous timeEntries snapshots
   const [mobileDayIndex, setMobileDayIndex] = useState(() => {
     const d = new Date().getDay();
@@ -943,12 +975,15 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
   const isThisWeek = weekOffset === 0;
   const isTodayDate = (d) => d === todayISO();
   const dayNames = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-  const HOURS = Array.from({ length: 16 }, (_, i) => i + 6);
-  const fmtHour = (h) => { const p = h >= 12 ? "p" : "a"; const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h; return `${h12}${p}`; };
-  const fmtHourLong = (h) => { const p = h >= 12 ? "pm" : "am"; const h12 = h === 0 ? 12 : h > 12 ? h - 12 : h; return `${h12} ${p}`; };
+  const HOURS = Array.from({ length: 24 }, (_, i) => i);
+  const fmtHour = (h) => { const hh = h % 24; const p = hh >= 12 ? "p" : "a"; const h12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh; return `${h12}${p}`; };
+  const fmtHourLong = (h) => { const hh = h % 24; const p = hh >= 12 ? "pm" : "am"; const h12 = hh === 0 ? 12 : hh > 12 ? hh - 12 : hh; return `${h12} ${p}`; };
 
   const weekEntries = useMemo(() => timeEntries.filter(e => weekDates.includes(e.date)), [timeEntries, weekDates]);
   const weekHours = weekEntries.length;
+
+  const isOffHour = (h) => h < 9 || h >= 19;
+  const OFF_HOUR_TINT = "rgba(0,0,0,0.02)";
 
   const hourMap = useMemo(() => {
     const m = {};
@@ -958,6 +993,17 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
 
   const getEntry = (date, hour) => hourMap[`${date}::${hour}`] || null;
   const dayTotalHrs = (d) => weekEntries.filter(e => e.date === d).length;
+  const dayBreakdown = (d) => {
+    const entries = weekEntries.filter(e => e.date === d);
+    const total = entries.length;
+    const ot = entries.filter(e => isOffHour(e.hour)).length;
+    return { total, reg: total - ot, ot };
+  };
+  const weekBreakdown = useMemo(() => {
+    const total = weekEntries.length;
+    const ot = weekEntries.filter(e => isOffHour(e.hour)).length;
+    return { total, reg: total - ot, ot };
+  }, [weekEntries]);
 
   // Projects with active bookings for the current week
   const bookedProjectIds = useMemo(() => {
@@ -1180,16 +1226,27 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
             const dateObj = new Date(d + "T12:00:00");
             const active = mobileDayIndex === i;
             const dh = dayTotalHrs(d);
+            const dayNote = getDayNote(d);
             return (
-              <button key={d} onClick={() => { setMobileDayIndex(i); setMobileActionMenu(null); }}
+              <button key={d} onClick={() => {
+                if (active) { openDayNote(d); return; }
+                setMobileDayIndex(i); setMobileActionMenu(null);
+              }}
                 style={{
                   flex: "1 0 auto", minWidth: "44px", padding: "6px 8px",
                   borderRadius: "8px", border: `1.5px solid ${active ? t.green : t.borderLight}`,
                   background: active ? t.greenBg : isTodayDate(d) ? "rgba(45,138,78,0.04)" : t.white,
-                  cursor: "pointer", textAlign: "center",
+                  cursor: "pointer", textAlign: "center", position: "relative",
                   display: "flex", flexDirection: "column", alignItems: "center", gap: "1px",
                   fontFamily: "'Instrument Sans', sans-serif",
                 }}>
+                {dayNote && (
+                  <span style={{
+                    position: "absolute", top: "2px", right: "3px",
+                    width: "5px", height: "5px", borderRadius: "50%",
+                    background: active ? t.green : t.text, opacity: 0.7,
+                  }} />
+                )}
                 <span style={{ fontSize: "10px", fontWeight: 600, color: active ? t.green : t.textTertiary }}>{dayNames[i]}</span>
                 <span style={{ fontSize: "16px", fontWeight: active ? 750 : 600, color: active ? t.green : t.text }}>{dateObj.getDate()}</span>
                 {dh > 0 && <span style={{ fontSize: "9px", color: active ? t.green : t.textTertiary }}>{dh}h</span>}
@@ -1198,6 +1255,27 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
           })}
         </div>
       )}
+
+      {/* Mobile selected-day tally */}
+      {isMobile && (() => {
+        const b = dayBreakdown(weekDates[mobileDayIndex]);
+        return (
+          <div style={{
+            display: "flex", justifyContent: "space-between", alignItems: "center",
+            padding: "0 16px 10px", fontSize: "10.5px", color: t.textTertiary,
+            fontFamily: "'Instrument Sans', sans-serif",
+          }}>
+            <span>
+              {dayNames[mobileDayIndex]}: <strong style={{ color: t.textSecondary, fontWeight: 700 }}>{b.total}h</strong>
+              {b.total > 0 && <> &middot; {b.reg} reg{b.ot > 0 && <> &middot; <span style={{ color: t.yellow }}>{b.ot} OT</span></>}</>}
+            </span>
+            <span>
+              Week: <strong style={{ color: t.textSecondary, fontWeight: 700 }}>{weekBreakdown.total}h</strong>
+              {weekBreakdown.total > 0 && <> &middot; {weekBreakdown.reg} reg{weekBreakdown.ot > 0 && <> &middot; <span style={{ color: t.yellow }}>{weekBreakdown.ot} OT</span></>}</>}
+            </span>
+          </div>
+        );
+      })()}
 
       {/* Project selector bar */}
       <div style={{
@@ -1299,6 +1377,28 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
 
       {/* MOBILE SINGLE-DAY VIEW */}
       {isMobile ? (
+        <>
+        {(() => {
+          const d = weekDates[mobileDayIndex];
+          const dayNote = getDayNote(d);
+          return (
+            <button onClick={() => openDayNote(d)} style={{
+              display: "flex", alignItems: "center", gap: "8px",
+              width: "100%", padding: "8px 16px",
+              border: "none", borderTop: `1px solid ${t.borderLight}`, borderBottom: `1px solid ${t.borderLight}`,
+              background: dayNote ? t.surfaceAlt : t.white,
+              cursor: "pointer", textAlign: "left",
+              fontFamily: "'Instrument Sans', sans-serif",
+            }}>
+              <span style={{ fontSize: "12px", color: dayNote ? t.text : t.textTertiary, flexShrink: 0 }}>&#9998;</span>
+              <span style={{
+                fontSize: "12px", fontStyle: dayNote ? "italic" : "normal",
+                color: dayNote ? t.textSecondary : t.textTertiary,
+                flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+              }}>{dayNote || "Add a note for this day"}</span>
+            </button>
+          );
+        })()}
         <div style={{ background: t.white, border: `1px solid ${t.border}`, overflow: "hidden", position: "relative" }}>
           {HOURS.map(hour => {
             const d = weekDates[mobileDayIndex];
@@ -1324,7 +1424,7 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
                   height: "48px", padding: "0 16px",
                   borderBottom: `1px solid ${t.borderLight}`,
                   cursor: activeProject || entry ? "pointer" : "default",
-                  background: menuOpen ? (pc ? `${pc.border}33` : t.accentSoft) : entry ? pc.bg : "transparent",
+                  background: menuOpen ? (pc ? `${pc.border}33` : t.accentSoft) : entry ? pc.bg : (isOffHour(hour) ? OFF_HOUR_TINT : "transparent"),
                   transition: "background 0.06s",
                   position: "relative",
                 }}>
@@ -1368,6 +1468,7 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
             );
           })}
         </div>
+        </>
       ) : (
       /* DESKTOP HOUR GRID */
       <div style={{ background: t.white, border: `1px solid ${t.border}`, borderRadius: "12px", overflow: "auto", boxShadow: "0 1px 4px rgba(0,0,0,0.04)" }}>
@@ -1381,16 +1482,42 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
             const dateObj = new Date(d + "T12:00:00");
             const isWknd = i >= 5;
             const dh = dayTotalHrs(d);
+            const dayNote = getDayNote(d);
             return (
               <div key={d} style={{
-                padding: "7px 4px", textAlign: "center",
+                padding: "7px 4px 5px", textAlign: "center",
                 borderBottom: `1px solid ${t.border}`,
                 borderRight: i < 6 ? `1px solid ${t.borderLight}` : "none",
                 background: isTodayDate(d) ? t.greenBg : isWknd ? t.surfaceAlt : "transparent",
+                position: "relative",
               }}>
+                <button
+                  onClick={() => openDayNote(d)}
+                  title={dayNote || "Add note for this day"}
+                  style={{
+                    position: "absolute", top: "3px", right: "3px",
+                    width: "16px", height: "16px", padding: 0,
+                    border: "none", borderRadius: "50%",
+                    background: dayNote ? (isTodayDate(d) ? t.green : t.text) : "transparent",
+                    color: dayNote ? t.white : t.textTertiary,
+                    fontSize: "9px", lineHeight: 1, cursor: "pointer",
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    opacity: dayNote ? 0.85 : 0.35, transition: "opacity 0.12s",
+                  }}
+                  onMouseEnter={ev => ev.currentTarget.style.opacity = "1"}
+                  onMouseLeave={ev => ev.currentTarget.style.opacity = dayNote ? "0.85" : "0.35"}
+                >&#9998;</button>
                 <div style={{ fontSize: "10px", fontWeight: 600, color: isTodayDate(d) ? t.green : isWknd ? t.textTertiary : t.textSecondary }}>{dayNames[i]}</div>
                 <div style={{ fontSize: "14px", fontWeight: isTodayDate(d) ? 750 : 650, color: isTodayDate(d) ? t.green : t.text }}>{dateObj.getDate()}</div>
                 {dh > 0 && <div style={{ fontSize: "9px", color: t.textTertiary, marginTop: "1px" }}>{dh}h</div>}
+                {dayNote && (
+                  <div style={{
+                    fontSize: "9.5px", color: t.textSecondary, marginTop: "2px",
+                    fontStyle: "italic", lineHeight: 1.2,
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    padding: "0 2px",
+                  }} title={dayNote}>{dayNote}</div>
+                )}
               </div>
             );
           })}
@@ -1401,7 +1528,7 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
               <div key={`label-${hour}`} style={{
                 padding: "0 4px", display: "flex", alignItems: "center", justifyContent: "center",
                 borderRight: `1px solid ${t.borderLight}`, borderBottom: `1px solid ${t.borderLight}`,
-                background: t.surfaceAlt, height: "34px",
+                background: isOffHour(hour) ? "rgba(0,0,0,0.04)" : t.surfaceAlt, height: "34px",
               }}>
                 <span style={{ fontSize: "10px", fontWeight: 600, color: t.textTertiary, fontFamily: "monospace" }}>{fmtHour(hour)}</span>
               </div>
@@ -1507,15 +1634,42 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
                     borderBottom: `1px solid ${t.borderLight}`,
                     height: "34px", cursor: activeProject ? "pointer" : "default",
                     transition: "background 0.06s",
-                    background: isTodayDate(d) ? "rgba(45,138,78,0.02)" : isWknd ? "rgba(0,0,0,0.012)" : "transparent",
+                    background: isTodayDate(d) ? "rgba(45,138,78,0.02)" : isWknd ? (isOffHour(hour) ? "rgba(0,0,0,0.03)" : "rgba(0,0,0,0.012)") : (isOffHour(hour) ? OFF_HOUR_TINT : "transparent"),
                   }}
                   onMouseEnter={ev => { if (activeProject) ev.currentTarget.style.background = projectColors[activeProject.projectId]?.bg || t.accentSoft; }}
-                  onMouseLeave={ev => ev.currentTarget.style.background = isTodayDate(d) ? "rgba(45,138,78,0.02)" : isWknd ? "rgba(0,0,0,0.012)" : "transparent"}
+                  onMouseLeave={ev => ev.currentTarget.style.background = isTodayDate(d) ? "rgba(45,138,78,0.02)" : isWknd ? (isOffHour(hour) ? "rgba(0,0,0,0.03)" : "rgba(0,0,0,0.012)") : (isOffHour(hour) ? OFF_HOUR_TINT : "transparent")}
                 />
               );
             });
 
             return rowCells;
+          })}
+
+          {/* Footer totals row */}
+          <div style={{
+            padding: "5px 4px", display: "flex", alignItems: "center", justifyContent: "center",
+            borderTop: `1px solid ${t.border}`, borderRight: `1px solid ${t.borderLight}`,
+            background: t.surfaceAlt,
+          }}>
+            <span style={{ fontSize: "9px", fontWeight: 700, color: t.textTertiary, textTransform: "uppercase", letterSpacing: "0.04em" }}>Total</span>
+          </div>
+          {weekDates.map((d, i) => {
+            const b = dayBreakdown(d);
+            return (
+              <div key={`tot-${d}`} style={{
+                padding: "4px 4px 5px", textAlign: "center",
+                borderTop: `1px solid ${t.border}`,
+                borderRight: i < 6 ? `1px solid ${t.borderLight}` : "none",
+                background: t.surfaceAlt,
+              }}>
+                <div style={{ fontSize: "11px", fontWeight: 700, color: b.total > 0 ? t.text : t.textTertiary, lineHeight: 1.15 }}>{b.total}h</div>
+                {b.total > 0 && (
+                  <div style={{ fontSize: "9px", color: t.textTertiary, marginTop: "1px", lineHeight: 1.2 }}>
+                    {b.reg} reg{b.ot > 0 && <> &middot; <span style={{ color: t.yellow }}>{b.ot} OT</span></>}
+                  </div>
+                )}
+              </div>
+            );
           })}
         </div>
       </div>
@@ -1524,9 +1678,18 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
       {/* Summary list */}
       {weekSummary.length > 0 && (
         <div style={{ marginTop: "20px", padding: isMobile ? "0 16px" : undefined }}>
-          <h3 style={{ fontSize: "12px", fontWeight: 700, color: t.textTertiary, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "10px" }}>
-            {isMobile ? dayNames[mobileDayIndex] + "'s Entries" : "This Week"}
-          </h3>
+          <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: "10px", marginBottom: "10px", flexWrap: "wrap" }}>
+            <h3 style={{ fontSize: "12px", fontWeight: 700, color: t.textTertiary, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+              {isMobile ? dayNames[mobileDayIndex] + "'s Entries" : "This Week"}
+            </h3>
+            {weekBreakdown.total > 0 && (
+              <div style={{ fontSize: "11px", color: t.textTertiary, fontFamily: "'Instrument Sans', sans-serif" }}>
+                <strong style={{ color: t.textSecondary, fontWeight: 700 }}>{weekBreakdown.total}h</strong> total
+                {" "}&middot; {weekBreakdown.reg} reg
+                {weekBreakdown.ot > 0 && <> &middot; <span style={{ color: t.yellow, fontWeight: 600 }}>{weekBreakdown.ot} OT</span></>}
+              </div>
+            )}
+          </div>
           <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
             {(isMobile ? weekSummary.filter(g => g.date === weekDates[mobileDayIndex]) : weekSummary).map((g, i) => {
               const proj = getProject(g.projectId);
@@ -1575,7 +1738,7 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
               <Sel label="From" value={String(batchForm.startHour)} onChange={v => setBatchForm({...batchForm, startHour: parseInt(v)})}
                 options={HOURS.map(h => ({value: String(h), label: fmtHourLong(h)}))} style={{flex:1}} />
               <Sel label="To" value={String(batchForm.endHour)} onChange={v => setBatchForm({...batchForm, endHour: parseInt(v)})}
-                options={HOURS.filter(h => h > batchForm.startHour).concat([22]).map(h => ({value: String(h), label: fmtHourLong(h)}))} style={{flex:1}} />
+                options={HOURS.filter(h => h > batchForm.startHour).concat([24]).map(h => ({value: String(h), label: fmtHourLong(h)}))} style={{flex:1}} />
             </div>
             <div style={{ display: "flex", gap: "8px", justifyContent: "flex-end", marginTop: "4px" }}>
               <Btn onClick={() => setShowBatch(false)}>Cancel</Btn>
@@ -1647,6 +1810,55 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
                 <div style={{ display: "flex", gap: "8px" }}>
                   <Btn onClick={() => { setNoteModal(null); setNoteText(""); }}>Cancel</Btn>
                   <Btn v="primary" onClick={saveNotes}>Save</Btn>
+                </div>
+              </div>
+            </div>
+          </Modal>
+        );
+      })()}
+
+      {/* Day note modal */}
+      {dayNoteModal && (() => {
+        const existing = getDayNote(dayNoteModal.date);
+        return (
+          <Modal title="Day Note" onClose={() => { setDayNoteModal(null); setDayNoteText(""); }} width={420}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+              <div style={{ fontSize: "13px", fontWeight: 650, color: t.text }}>
+                {fmtDateFull(dayNoteModal.date)}
+              </div>
+              <div>
+                <label style={{ fontSize: "11.5px", fontWeight: 600, color: t.textSecondary, display: "block", marginBottom: "5px" }}>Note</label>
+                <textarea
+                  ref={el => { if (el && !el.dataset.focused) { el.focus(); el.dataset.focused = "1"; } }}
+                  value={dayNoteText}
+                  onChange={ev => setDayNoteText(ev.target.value)}
+                  placeholder="Vacation, project direction changed, client feedback session..."
+                  rows={3}
+                  style={{
+                    width: "100%", padding: "10px 12px", borderRadius: "8px",
+                    border: `1px solid ${t.border}`, background: t.white,
+                    fontSize: "13px", fontFamily: "'Instrument Sans', sans-serif",
+                    color: t.text, resize: "vertical", outline: "none",
+                    boxSizing: "border-box",
+                  }}
+                  onFocus={ev => ev.currentTarget.style.borderColor = t.text}
+                  onBlur={ev => ev.currentTarget.style.borderColor = t.border}
+                />
+              </div>
+              <div style={{ display: "flex", gap: "8px", justifyContent: "space-between", alignItems: "center" }}>
+                {existing ? (
+                  <button
+                    onClick={clearDayNote}
+                    style={{
+                      background: "none", border: "none", fontSize: "12px",
+                      color: t.red, cursor: "pointer", fontFamily: "'Instrument Sans', sans-serif",
+                      fontWeight: 600, padding: "4px 0",
+                    }}
+                  >Delete note</button>
+                ) : <span />}
+                <div style={{ display: "flex", gap: "8px" }}>
+                  <Btn onClick={() => { setDayNoteModal(null); setDayNoteText(""); }}>Cancel</Btn>
+                  <Btn v="primary" onClick={saveDayNote}>Save</Btn>
                 </div>
               </div>
             </div>
@@ -2137,11 +2349,12 @@ ${settings.businessEmail ? `<div style="font-size:12px;color:#9c9a94;margin-top:
   }
 }
 
-function Invoices({ invoices, setInvoices, timeEntries, projects, clients, settings, setSettings, getClient, getProject, isMobile }) {
+function Invoices({ invoices, setInvoices, timeEntries, projects, clients, pencils, settings, setSettings, getClient, getProject, getRate, isMobile }) {
   const [showCreate, setShowCreate] = useState(false);
   const [selClient, setSelClient] = useState("");
   const [selDays, setSelDays] = useState([]); // array of ISO date strings
   const [dayNotes, setDayNotes] = useState({}); // { "2025-03-01": "note..." }
+  const [dayBillingMode, setDayBillingMode] = useState({}); // { "2025-03-01": "day_rate" | "hourly" }
   const [dueDate, setDueDate] = useState(() => { const d = new Date(); d.setDate(d.getDate() + 30); return toISO(d); });
   const [notes, setNotes] = useState("");
   const [invoiceCode, setInvoiceCode] = useState("");
@@ -2196,6 +2409,19 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, setti
       });
   }, [selClient, timeEntries, invoicedIds, getProject]);
 
+  // Day rate cascade: booking → client → default. Uses the first project on the day for booking lookup.
+  const getDayRate = (day) => {
+    if (!getRate) return 0;
+    const client = getClient(selClient);
+    const projectId = day.entries?.[0]?.projectId;
+    return getRate(client, "day_rate", { date: day.date, projectId });
+  };
+
+  const getDayAmount = (day) => {
+    const mode = dayBillingMode[day.date] || "day_rate";
+    return mode === "day_rate" ? getDayRate(day) : day.totalAmount;
+  };
+
   const toggleDay = (date) => {
     setSelDays(prev => {
       if (prev.includes(date)) return prev.filter(d => d !== date);
@@ -2206,6 +2432,8 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, setti
     if (day && !dayNotes[date]) {
       setDayNotes(prev => ({ ...prev, [date]: day.existingNote || day.breakdown }));
     }
+    // Default to Day Rate for newly-selected days
+    setDayBillingMode(prev => prev[date] ? prev : { ...prev, [date]: "day_rate" });
   };
 
   const selectAllDays = () => {
@@ -2216,17 +2444,21 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, setti
       setSelDays(allDates);
       // Pre-fill notes for all days
       const newNotes = { ...dayNotes };
+      const newModes = { ...dayBillingMode };
       clientDays.forEach(d => {
         if (!newNotes[d.date]) newNotes[d.date] = d.existingNote || d.breakdown;
+        if (!newModes[d.date]) newModes[d.date] = "day_rate";
       });
       setDayNotes(newNotes);
+      setDayBillingMode(newModes);
     }
   };
 
   const selTotal = useMemo(() => {
-    const dayTotal = clientDays.filter(d => selDays.includes(d.date)).reduce((s, d) => s + d.totalAmount, 0);
+    const dayTotal = clientDays.filter(d => selDays.includes(d.date)).reduce((s, d) => s + getDayAmount(d), 0);
     return dayTotal + expenseTotal;
-  }, [selDays, clientDays, expenseTotal]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selDays, clientDays, dayBillingMode, expenseTotal, pencils, selClient, settings]);
 
   const selHours = useMemo(() => {
     return clientDays.filter(d => selDays.includes(d.date)).reduce((s, d) => s + d.totalHours, 0);
@@ -2238,17 +2470,26 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, setti
     const client = getClient(selClient);
     const allDates = selectedDayData.map(d => d.date).sort();
 
-    // Day line items
-    const dayItems = selectedDayData.map(d => ({
-      type: "day", date: d.date, hours: d.totalHours, amount: d.totalAmount, note: d.breakdown,
-    }));
+    // Day line items — honor per-day billing mode (Day Rate vs Hourly)
+    const dayItems = selectedDayData.map(d => {
+      const mode = dayBillingMode[d.date] || "day_rate";
+      const amount = mode === "day_rate" ? getDayRate(d) : d.totalAmount;
+      return {
+        type: "day",
+        date: d.date,
+        hours: mode === "day_rate" ? null : d.totalHours,
+        amount,
+        note: mode === "day_rate" ? `${d.breakdown} (Day Rate)` : d.breakdown,
+        billingMode: mode,
+      };
+    });
     // Expense line items
     const expItems = expenses.map(e => ({
       type: "expense", date: null, hours: null, amount: e.amount, note: e.description,
     }));
     const lineItems = [...dayItems, ...expItems];
 
-    const total = selectedDayData.reduce((s, d) => s + d.totalAmount, 0) + expenseTotal;
+    const total = selectedDayData.reduce((s, d) => s + getDayAmount(d), 0) + expenseTotal;
 
     const inv = {
       id: uid(),
@@ -2271,7 +2512,7 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, setti
     setInvoices(prev => [inv, ...prev]);
     setSettings(prev => ({ ...prev, nextInvoiceNumber: prev.nextInvoiceNumber + 1 }));
     setShowCreate(false);
-    setSelClient(""); setSelDays([]); setDayNotes({}); setNotes(""); setDueDate(() => { const d = new Date(); d.setDate(d.getDate() + 30); return toISO(d); }); setInvoiceCode(""); setExpenses([]);
+    setSelClient(""); setSelDays([]); setDayNotes({}); setDayBillingMode({}); setNotes(""); setDueDate(() => { const d = new Date(); d.setDate(d.getDate() + 30); return toISO(d); }); setInvoiceCode(""); setExpenses([]);
   };
 
   const dayNameShort = (iso) => {
@@ -2311,7 +2552,7 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, setti
       {showCreate && (
         <Modal title="Create Invoice" onClose={() => setShowCreate(false)} width={680}>
           <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-            <Sel label="Client" value={selClient} onChange={v => { setSelClient(v); setSelDays([]); setDayNotes({}); }}
+            <Sel label="Client" value={selClient} onChange={v => { setSelClient(v); setSelDays([]); setDayNotes({}); setDayBillingMode({}); }}
               options={[{value:"",label:"Select client..."}, ...clients.map(c => ({value:c.id, label:c.name}))]} />
 
             {selClient && clientDays.length === 0 && <Muted>No uninvoiced days for this client.</Muted>}
@@ -2325,6 +2566,12 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, setti
                 <div style={{ maxHeight: "400px", overflow: "auto", display: "flex", flexDirection: "column", gap: "4px" }}>
                   {clientDays.map(day => {
                     const on = selDays.includes(day.date);
+                    const mode = dayBillingMode[day.date] || "day_rate";
+                    const dayRate = getDayRate(day);
+                    const displayAmount = on ? getDayAmount(day) : (mode === "day_rate" ? dayRate : day.totalAmount);
+                    const rateLabel = mode === "day_rate"
+                      ? `${fmt(dayRate)} day rate`
+                      : `${day.totalHours}h · hourly`;
                     return (
                       <div key={day.date} style={{
                         background: on ? t.greenBg : t.surfaceAlt,
@@ -2347,13 +2594,39 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, setti
                           <span style={{ fontSize: "12px", fontFamily: "monospace", color: t.textTertiary, minWidth: "32px" }}>{dayNameShort(day.date)}</span>
                           <span style={{ fontSize: "13px", fontWeight: 600, color: t.text, minWidth: "65px" }}>{fmtDateShort(day.date)}</span>
                           <span style={{ fontSize: "12px", color: t.textSecondary, flex: 1 }}>{day.breakdown}</span>
-                          <span style={{ fontSize: "12px", color: t.textTertiary }}>{day.totalHours}h</span>
-                          <span style={{ fontFamily: "monospace", fontSize: "13px", fontWeight: 650, color: t.text, minWidth: "70px", textAlign: "right" }}>{fmt(day.totalAmount)}</span>
+                          <span style={{ fontSize: "11px", color: t.textTertiary, fontStyle: "italic" }}>{rateLabel}</span>
+                          <span style={{ fontFamily: "monospace", fontSize: "13px", fontWeight: 650, color: t.text, minWidth: "70px", textAlign: "right" }}>{fmt(displayAmount)}</span>
                         </div>
-                        {/* Show breakdown when selected */}
+                        {/* Billing mode toggle and breakdown — visible when selected */}
                         {on && (
-                          <div style={{ padding: "0 12px 10px 46px" }}>
-                            <div style={{ fontSize: "12px", color: t.textSecondary, fontStyle: "italic" }}>{day.breakdown}</div>
+                          <div style={{ padding: "0 12px 10px 46px", display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                            <div onClick={e => e.stopPropagation()} style={{
+                              display: "inline-flex", border: `1px solid ${t.border}`, borderRadius: "6px",
+                              overflow: "hidden", background: t.white,
+                            }}>
+                              {[
+                                { id: "day_rate", label: "Day Rate" },
+                                { id: "hourly", label: "Hourly" },
+                              ].map(opt => {
+                                const active = mode === opt.id;
+                                return (
+                                  <button key={opt.id} type="button"
+                                    onClick={() => setDayBillingMode(prev => ({ ...prev, [day.date]: opt.id }))}
+                                    style={{
+                                      padding: "4px 10px", fontSize: "11px", fontWeight: 600,
+                                      fontFamily: "'Instrument Sans', sans-serif",
+                                      background: active ? t.black : "transparent",
+                                      color: active ? t.white : t.textSecondary,
+                                      border: "none", cursor: "pointer", letterSpacing: "-0.01em",
+                                    }}>{opt.label}</button>
+                                );
+                              })}
+                            </div>
+                            <span style={{ fontSize: "11.5px", color: t.textSecondary }}>
+                              {mode === "day_rate"
+                                ? `${fmt(dayRate)} · logged ${day.totalHours}h (${fmt(day.totalAmount)})`
+                                : `${day.totalHours}h logged · ${fmt(day.totalAmount)}`}
+                            </span>
                           </div>
                         )}
                       </div>
@@ -2877,9 +3150,29 @@ function Clients({ clients, setClients, projects, setProjects, settings, timeEnt
 // ============================================================
 // REPORTS
 // ============================================================
-function Reports({ timeEntries, projects, clients, invoices, settings, getClient, getProject, isMobile }) {
+function Reports({ timeEntries, projects, clients, pencils, invoices, settings, getClient, getProject, isMobile }) {
   const [period, setPeriod] = useState("month"); // week, month, quarter, year
   const [offset, setOffset] = useState(0);
+  const [filterClient, setFilterClient] = useState("");
+  const [filterProject, setFilterProject] = useState("");
+  const [filterService, setFilterService] = useState("");
+  const [otOnly, setOtOnly] = useState(false);
+  const [expandedClients, setExpandedClients] = useState(() => new Set());
+  const [expandedProjects, setExpandedProjects] = useState(() => new Set());
+  const [expandedBookings, setExpandedBookings] = useState(() => new Set());
+
+  const toggleIn = (setter) => (id) => setter(prev => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const toggleClient = toggleIn(setExpandedClients);
+  const toggleProject = toggleIn(setExpandedProjects);
+  const toggleBooking = toggleIn(setExpandedBookings);
+
+  const isOTHour = (h) => h < 9 || h > 18;
+  const hide = settings.hideDollars;
+  const fmtAvg = (n) => (Number.isInteger(n) ? n.toString() : n.toFixed(1));
 
   const { label, startDate, endDate } = useMemo(() => {
     const now = new Date();
@@ -2911,33 +3204,46 @@ function Reports({ timeEntries, projects, clients, invoices, settings, getClient
     return { label: String(y), startDate: `${y}-01-01`, endDate: `${y}-12-31` };
   }, [period, offset]);
 
+  // Reset project filter if it doesn't fit the current client filter
+  useEffect(() => {
+    if (!filterProject) return;
+    const proj = projects.find(p => p.id === filterProject);
+    if (!proj) { setFilterProject(""); return; }
+    if (filterClient && proj.clientId !== filterClient) setFilterProject("");
+  }, [filterClient, filterProject, projects]);
+
   const periodEntries = useMemo(() =>
     timeEntries.filter(e => e.date >= startDate && e.date <= endDate && e.projectId !== PERSONAL_PROJECT_ID),
     [timeEntries, startDate, endDate]
   );
 
-  const totalRevenue = periodEntries.reduce((s, e) => s + (e.amount || 0), 0);
-  const totalHours = periodEntries.length;
-  const uniqueDays = new Set(periodEntries.map(e => e.date)).size;
-
-  // By client
-  const byClient = useMemo(() => {
-    const m = {};
-    periodEntries.forEach(e => {
+  const filteredEntries = useMemo(() => periodEntries.filter(e => {
+    if (filterClient) {
       const proj = getProject(e.projectId);
-      const clientId = proj?.clientId || "unknown";
-      const clientName = getClient(clientId)?.name || "Unknown";
-      if (!m[clientId]) m[clientId] = { name: clientName, hours: 0, revenue: 0, days: new Set(), projects: {} };
-      m[clientId].hours++;
-      m[clientId].revenue += e.amount || 0;
-      m[clientId].days.add(e.date);
-      const pName = proj?.name || "?";
-      if (!m[clientId].projects[pName]) m[clientId].projects[pName] = { hours: 0, revenue: 0 };
-      m[clientId].projects[pName].hours++;
-      m[clientId].projects[pName].revenue += e.amount || 0;
-    });
-    return Object.values(m).sort((a, b) => b.revenue - a.revenue);
-  }, [periodEntries, getProject, getClient]);
+      if (!proj || proj.clientId !== filterClient) return false;
+    }
+    if (filterProject && e.projectId !== filterProject) return false;
+    if (filterService && e.serviceType !== filterService) return false;
+    if (otOnly && !isOTHour(e.hour)) return false;
+    return true;
+  }), [periodEntries, filterClient, filterProject, filterService, otOnly, getProject]);
+
+  const totalHours = filteredEntries.length;
+  const totalRevenue = filteredEntries.reduce((s, e) => s + (e.amount || 0), 0);
+  const uniqueDays = useMemo(() => new Set(filteredEntries.map(e => e.date)).size, [filteredEntries]);
+  const otEntries = useMemo(() => filteredEntries.filter(e => isOTHour(e.hour)), [filteredEntries]);
+  const otHours = otEntries.length;
+  const regHours = totalHours - otHours;
+  const daysWithOT = useMemo(() => new Set(otEntries.map(e => e.date)).size, [otEntries]);
+
+  const periodDays = daysBetween(startDate, endDate);
+  const weeksInPeriod = periodDays / 7;
+
+  const avgHoursPerDay = uniqueDays > 0 ? totalHours / uniqueDays : 0;
+  const avgHoursPerWeek = weeksInPeriod > 0 ? totalHours / weeksInPeriod : 0;
+  const avgOTPerDay = daysWithOT > 0 ? otHours / daysWithOT : 0;
+  const avgRevenuePerDay = uniqueDays > 0 ? totalRevenue / uniqueDays : 0;
+  const avgRevenuePerWeek = weeksInPeriod > 0 ? totalRevenue / weeksInPeriod : 0;
 
   // Utilization
   const workdaysInPeriod = useMemo(() => {
@@ -2952,13 +3258,94 @@ function Reports({ timeEntries, projects, clients, invoices, settings, getClient
   const utilization = workdaysInPeriod > 0 ? Math.round((uniqueDays / workdaysInPeriod) * 100) : 0;
 
   // Invoiced in period
-  const periodInvoiced = useMemo(() => {
-    return invoices
-      .filter(i => i.issueDate >= startDate && i.issueDate <= endDate)
-      .reduce((s, i) => s + i.total, 0);
-  }, [invoices, startDate, endDate]);
+  const periodInvoiced = useMemo(() =>
+    invoices.filter(i => i.issueDate >= startDate && i.issueDate <= endDate).reduce((s, i) => s + i.total, 0),
+    [invoices, startDate, endDate]
+  );
 
-  const hide = settings.hideDollars;
+  // By client
+  const byClient = useMemo(() => {
+    const m = {};
+    filteredEntries.forEach(e => {
+      const proj = getProject(e.projectId);
+      const clientId = proj?.clientId || "unknown";
+      const clientName = getClient(clientId)?.name || "Unknown";
+      if (!m[clientId]) m[clientId] = { id: clientId, name: clientName, hours: 0, revenue: 0, days: new Set(), ot: 0, projects: {} };
+      m[clientId].hours++;
+      m[clientId].revenue += e.amount || 0;
+      m[clientId].days.add(e.date);
+      if (isOTHour(e.hour)) m[clientId].ot++;
+      const pId = e.projectId;
+      const pName = proj?.name || "?";
+      if (!m[clientId].projects[pId]) m[clientId].projects[pId] = { id: pId, name: pName, hours: 0, revenue: 0 };
+      m[clientId].projects[pId].hours++;
+      m[clientId].projects[pId].revenue += e.amount || 0;
+    });
+    return Object.values(m).sort((a, b) => b.revenue - a.revenue);
+  }, [filteredEntries, getProject, getClient]);
+
+  // By project
+  const byProject = useMemo(() => {
+    const m = {};
+    filteredEntries.forEach(e => {
+      const proj = getProject(e.projectId);
+      const client = proj ? getClient(proj.clientId) : null;
+      const pId = e.projectId;
+      if (!m[pId]) m[pId] = { id: pId, name: proj?.name || "?", clientName: client?.name || "Unknown", hours: 0, revenue: 0, days: new Set(), dailyHours: {} };
+      m[pId].hours++;
+      m[pId].revenue += e.amount || 0;
+      m[pId].days.add(e.date);
+      m[pId].dailyHours[e.date] = (m[pId].dailyHours[e.date] || 0) + 1;
+    });
+    return Object.values(m).sort((a, b) => b.revenue - a.revenue);
+  }, [filteredEntries, getProject, getClient]);
+
+  // By booking
+  const byBooking = useMemo(() => {
+    const matching = pencils.filter(p => {
+      if (p.endDate < startDate || p.startDate > endDate) return false;
+      const pClient = p.clientId || (p.projectId ? getProject(p.projectId)?.clientId : null);
+      if (filterClient && pClient !== filterClient) return false;
+      if (filterProject && p.projectId !== filterProject) return false;
+      return true;
+    });
+    return matching.map(p => {
+      const ents = filteredEntries.filter(e => {
+        if (e.date < p.startDate || e.date > p.endDate) return false;
+        if (p.projectId && e.projectId !== p.projectId) return false;
+        if (!p.projectId && p.clientId) {
+          const proj = getProject(e.projectId);
+          if (!proj || proj.clientId !== p.clientId) return false;
+        }
+        return true;
+      });
+      const project = p.projectId ? getProject(p.projectId) : null;
+      const client = getClient(p.clientId) || (project ? getClient(project.clientId) : null);
+      const priority = PENCIL_PRIORITY[p.priority ?? 0];
+      const otCount = ents.filter(e => isOTHour(e.hour)).length;
+      const dailyHours = ents.reduce((acc, e) => { acc[e.date] = (acc[e.date] || 0) + 1; return acc; }, {});
+      return {
+        id: p.id,
+        startDate: p.startDate,
+        endDate: p.endDate,
+        clientName: client?.name || "—",
+        projectName: project?.name || "",
+        priority,
+        rates: p.rates || {},
+        notes: p.notes || "",
+        hours: ents.length,
+        billed: ents.reduce((s, e) => s + (e.amount || 0), 0),
+        ot: otCount,
+        dailyHours,
+      };
+    }).sort((a, b) => b.startDate.localeCompare(a.startDate));
+  }, [pencils, filteredEntries, startDate, endDate, filterClient, filterProject, getProject, getClient]);
+
+  const filtersActive = filterClient || filterProject || filterService || otOnly;
+  const sectionHeaderStyle = { fontSize: "12px", fontWeight: 700, color: t.textTertiary, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "10px", marginTop: "8px" };
+  const chevron = (open) => (
+    <span style={{ fontSize: "10px", color: t.textTertiary, transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", display: "inline-block", flexShrink: 0 }}>&#9654;</span>
+  );
 
   return (
     <div style={isMobile ? { padding: "0 16px" } : undefined}>
@@ -2967,7 +3354,7 @@ function Reports({ timeEntries, projects, clients, invoices, settings, getClient
       </div>
 
       {/* Period selector */}
-      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "24px", flexWrap: "wrap" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: "12px", marginBottom: "14px", flexWrap: "wrap" }}>
         <div style={{ display: "flex", gap: "4px" }}>
           {[{ id: "week", l: "Week" }, { id: "month", l: "Month" }, { id: "quarter", l: "Quarter" }, { id: "year", l: "Year" }].map(p => (
             <button key={p.id} onClick={() => { setPeriod(p.id); setOffset(0); }}
@@ -2986,10 +3373,54 @@ function Reports({ timeEntries, projects, clients, invoices, settings, getClient
         </div>
       </div>
 
+      {/* Filters */}
+      <div style={{
+        display: "flex", gap: "12px", flexWrap: "wrap", alignItems: "flex-end",
+        marginBottom: "22px", padding: "12px 14px",
+        background: t.white, border: `1px solid ${t.border}`, borderRadius: "10px",
+      }}>
+        <Sel label="Client" value={filterClient} onChange={setFilterClient}
+          options={[{ value: "", label: "All clients" }, ...clients.map(c => ({ value: c.id, label: c.name }))]}
+          style={{ minWidth: "160px" }} />
+        <Sel label="Project" value={filterProject} onChange={setFilterProject}
+          options={[
+            { value: "", label: "All projects" },
+            ...projects
+              .filter(p => p.id !== PERSONAL_PROJECT_ID && (!filterClient || p.clientId === filterClient))
+              .map(p => ({ value: p.id, label: p.name })),
+          ]}
+          style={{ minWidth: "180px" }} />
+        <Sel label="Service" value={filterService} onChange={setFilterService}
+          options={[{ value: "", label: "All services" }, ...SERVICE_TYPES.map(s => ({ value: s.id, label: s.label }))]}
+          style={{ minWidth: "140px" }} />
+        <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
+          <label style={{ fontSize: "11.5px", fontWeight: 600, color: t.textSecondary, letterSpacing: "0.01em" }}>Overtime only</label>
+          <button onClick={() => setOtOnly(v => !v)}
+            aria-pressed={otOnly}
+            style={{
+              width: "44px", height: "24px", borderRadius: "12px", border: "none", cursor: "pointer",
+              background: otOnly ? t.yellow : t.borderLight,
+              position: "relative", transition: "background 0.2s",
+            }}>
+            <div style={{
+              width: "18px", height: "18px", borderRadius: "50%", background: t.white,
+              position: "absolute", top: "3px",
+              left: otOnly ? "23px" : "3px",
+              transition: "left 0.2s",
+              boxShadow: "0 1px 3px rgba(0,0,0,0.15)",
+            }} />
+          </button>
+        </div>
+        {filtersActive && (
+          <Btn v="ghost" size="sm" onClick={() => { setFilterClient(""); setFilterProject(""); setFilterService(""); setOtOnly(false); }}>Clear filters</Btn>
+        )}
+      </div>
+
       {/* Summary stats */}
-      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "28px" }}>
-        <Stat label="Hours" value={totalHours} sub={`${uniqueDays} days worked`} color={t.green} />
+      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "22px" }}>
+        <Stat label="Hours" value={totalHours} sub={`${uniqueDays} days · ${regHours} reg / ${otHours} OT`} color={t.green} />
         {!hide && <Stat label="Revenue" value={fmt(totalRevenue)} sub={totalHours > 0 ? `${fmt(totalRevenue / totalHours)}/hr effective` : ""} color={t.green} />}
+        <Stat label="Overtime Hours" value={otHours} sub={daysWithOT > 0 ? `${daysWithOT} day${daysWithOT !== 1 ? "s" : ""} with OT` : "no OT logged"} color={otHours > 0 ? t.yellow : t.textTertiary} />
         <Stat label="Utilization" value={`${utilization}%`} sub={`${uniqueDays} of ${workdaysInPeriod} workdays`} color={utilization >= 50 ? t.green : t.yellow} />
         {!hide && <Stat label="Invoiced" value={fmt(periodInvoiced)} sub={`${invoices.filter(i => i.issueDate >= startDate && i.issueDate <= endDate).length} invoices`} />}
         {(() => {
@@ -3000,39 +3431,204 @@ function Reports({ timeEntries, projects, clients, invoices, settings, getClient
         })()}
       </div>
 
+      {/* Averages */}
+      <h3 style={sectionHeaderStyle}>Averages</h3>
+      <div style={{ display: "flex", gap: "12px", flexWrap: "wrap", marginBottom: "28px" }}>
+        <Stat label="Hours / Day" value={fmtAvg(avgHoursPerDay)} sub={uniqueDays > 0 ? `${totalHours}h over ${uniqueDays} day${uniqueDays !== 1 ? "s" : ""}` : "no days worked"} />
+        <Stat label="Hours / Week" value={fmtAvg(avgHoursPerWeek)} sub={`${totalHours}h over ${weeksInPeriod.toFixed(1)} weeks`} />
+        <Stat label="OT Hours / Day" value={fmtAvg(avgOTPerDay)} sub={daysWithOT > 0 ? `${otHours}h over ${daysWithOT} OT day${daysWithOT !== 1 ? "s" : ""}` : "no OT logged"} color={daysWithOT > 0 ? t.yellow : t.textTertiary} />
+        {!hide && <Stat label="Revenue / Day" value={fmt(avgRevenuePerDay)} sub={uniqueDays > 0 ? `${uniqueDays} day${uniqueDays !== 1 ? "s" : ""} worked` : "no days worked"} />}
+        {!hide && <Stat label="Revenue / Week" value={fmt(avgRevenuePerWeek)} sub={`${weeksInPeriod.toFixed(1)} weeks`} />}
+      </div>
+
       {/* By client breakdown */}
+      <h3 style={sectionHeaderStyle}>By Client {byClient.length > 0 && <span style={{ color: t.textTertiary, fontWeight: 600 }}>({byClient.length})</span>}</h3>
       {byClient.length === 0 ? (
-        <Muted>No time logged in this period.</Muted>
+        <div style={{ marginBottom: "22px" }}><Muted>No time logged in this period.</Muted></div>
       ) : (
-        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "28px" }}>
           {byClient.map(c => {
+            const open = expandedClients.has(c.id);
             const pct = totalHours > 0 ? Math.round((c.hours / totalHours) * 100) : 0;
+            const avgPerDay = c.days.size > 0 ? c.hours / c.days.size : 0;
             return (
-              <div key={c.name} style={{
+              <div key={c.id} style={{
                 background: t.white, border: `1px solid ${t.border}`, borderRadius: "10px",
-                padding: "16px 18px", boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.03)", overflow: "hidden",
               }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
-                  <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                    <span style={{ fontSize: "15px", fontWeight: 700, color: t.text }}>{c.name}</span>
-                    <span style={{ fontSize: "12px", color: t.textTertiary }}>{c.hours}h &middot; {c.days.size} days &middot; {pct}%</span>
-                  </div>
-                  {!hide && <span style={{ fontSize: "16px", fontFamily: "monospace", fontWeight: 750, color: t.green }}>{fmt(c.revenue)}</span>}
-                </div>
-                {/* Bar */}
-                <div style={{ height: "6px", background: t.surfaceAlt, borderRadius: "3px", marginBottom: "10px", overflow: "hidden" }}>
-                  <div style={{ height: "100%", width: `${pct}%`, background: t.green, borderRadius: "3px", transition: "width 0.3s" }} />
-                </div>
-                {/* Projects */}
-                <div style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-                  {Object.entries(c.projects).sort((a, b) => b[1].hours - a[1].hours).map(([name, data]) => (
-                    <div key={name} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13px" }}>
-                      <span style={{ color: t.textSecondary, flex: 1 }}>{name}</span>
-                      <span style={{ color: t.textTertiary, fontSize: "12px" }}>{data.hours}h</span>
-                      {!hide && <span style={{ fontFamily: "monospace", fontWeight: 600, fontSize: "12px", color: t.text, minWidth: "70px", textAlign: "right" }}>{fmt(data.revenue)}</span>}
+                <button onClick={() => toggleClient(c.id)} style={{
+                  width: "100%", padding: "14px 18px", background: "none", border: "none",
+                  cursor: "pointer", textAlign: "left", fontFamily: "'Instrument Sans', sans-serif",
+                  display: "flex", flexDirection: "column", gap: "8px",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
+                      {chevron(open)}
+                      <span style={{ fontSize: "15px", fontWeight: 700, color: t.text }}>{c.name}</span>
+                      <span style={{ fontSize: "12px", color: t.textTertiary }}>{pct}%</span>
                     </div>
-                  ))}
-                </div>
+                    {!hide && <span style={{ fontSize: "16px", fontFamily: "monospace", fontWeight: 750, color: t.green }}>{fmt(c.revenue)}</span>}
+                  </div>
+                  <div style={{ display: "flex", gap: "14px", fontSize: "12px", color: t.textSecondary, flexWrap: "wrap", paddingLeft: "18px" }}>
+                    <span><strong style={{ color: t.text, fontWeight: 700 }}>{c.hours}h</strong> total</span>
+                    <span><strong style={{ color: t.text, fontWeight: 700 }}>{c.days.size}</strong> days</span>
+                    <span><strong style={{ color: t.text, fontWeight: 700 }}>{fmtAvg(avgPerDay)}h</strong> avg/day</span>
+                    {c.ot > 0 && <span><strong style={{ color: t.yellow, fontWeight: 700 }}>{c.ot}h</strong> OT</span>}
+                  </div>
+                  <div style={{ height: "6px", background: t.surfaceAlt, borderRadius: "3px", overflow: "hidden" }}>
+                    <div style={{ height: "100%", width: `${pct}%`, background: t.green, borderRadius: "3px", transition: "width 0.3s" }} />
+                  </div>
+                </button>
+                {open && (
+                  <div style={{ padding: "10px 18px 14px", display: "flex", flexDirection: "column", gap: "4px", borderTop: `1px solid ${t.borderLight}` }}>
+                    <div style={{ fontSize: "10.5px", fontWeight: 700, color: t.textTertiary, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "4px" }}>Projects</div>
+                    {Object.values(c.projects).sort((a, b) => b.hours - a.hours).map(p => (
+                      <div key={p.id} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "13px", padding: "3px 0" }}>
+                        <span style={{ color: t.textSecondary, flex: 1 }}>{p.name}</span>
+                        <span style={{ color: t.textTertiary, fontSize: "12px" }}>{p.hours}h</span>
+                        {!hide && <span style={{ fontFamily: "monospace", fontWeight: 600, fontSize: "12px", color: t.text, minWidth: "70px", textAlign: "right" }}>{fmt(p.revenue)}</span>}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* By project breakdown */}
+      <h3 style={sectionHeaderStyle}>By Project {byProject.length > 0 && <span style={{ color: t.textTertiary, fontWeight: 600 }}>({byProject.length})</span>}</h3>
+      {byProject.length === 0 ? (
+        <div style={{ marginBottom: "22px" }}><Muted>No projects in this period.</Muted></div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "28px" }}>
+          {byProject.map(p => {
+            const open = expandedProjects.has(p.id);
+            const avgPerDay = p.days.size > 0 ? p.hours / p.days.size : 0;
+            return (
+              <div key={p.id} style={{
+                background: t.white, border: `1px solid ${t.border}`, borderRadius: "10px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.03)", overflow: "hidden",
+              }}>
+                <button onClick={() => toggleProject(p.id)} style={{
+                  width: "100%", padding: "14px 18px", background: "none", border: "none",
+                  cursor: "pointer", textAlign: "left", fontFamily: "'Instrument Sans', sans-serif",
+                  display: "flex", flexDirection: "column", gap: "6px",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
+                      {chevron(open)}
+                      <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                        <span style={{ fontSize: "14px", fontWeight: 700, color: t.text }}>{p.name}</span>
+                        <span style={{ fontSize: "11.5px", color: t.textTertiary }}>{p.clientName}</span>
+                      </div>
+                    </div>
+                    {!hide && <span style={{ fontSize: "15px", fontFamily: "monospace", fontWeight: 700, color: t.green }}>{fmt(p.revenue)}</span>}
+                  </div>
+                  <div style={{ display: "flex", gap: "14px", fontSize: "12px", color: t.textSecondary, flexWrap: "wrap", paddingLeft: "18px" }}>
+                    <span><strong style={{ color: t.text, fontWeight: 700 }}>{p.hours}h</strong> total</span>
+                    <span><strong style={{ color: t.text, fontWeight: 700 }}>{p.days.size}</strong> days</span>
+                    <span><strong style={{ color: t.text, fontWeight: 700 }}>{fmtAvg(avgPerDay)}h</strong> avg/day</span>
+                  </div>
+                </button>
+                {open && (
+                  <div style={{ padding: "10px 18px 14px", display: "flex", flexDirection: "column", gap: "3px", borderTop: `1px solid ${t.borderLight}` }}>
+                    <div style={{ fontSize: "10.5px", fontWeight: 700, color: t.textTertiary, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "4px" }}>Days worked</div>
+                    {Object.entries(p.dailyHours).sort((a, b) => a[0].localeCompare(b[0])).map(([date, hrs]) => (
+                      <div key={date} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "12.5px", padding: "2px 0" }}>
+                        <span style={{ color: t.textSecondary, flex: 1, fontFamily: "monospace" }}>{fmtDateShort(date)}</span>
+                        <span style={{ color: t.textTertiary }}>{hrs}h</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* By booking breakdown */}
+      <h3 style={sectionHeaderStyle}>By Booking {byBooking.length > 0 && <span style={{ color: t.textTertiary, fontWeight: 600 }}>({byBooking.length})</span>}</h3>
+      {byBooking.length === 0 ? (
+        <div style={{ marginBottom: "22px" }}><Muted>No bookings overlap this period.</Muted></div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px", marginBottom: "28px" }}>
+          {byBooking.map(b => {
+            const open = expandedBookings.has(b.id);
+            const rateEntries = Object.entries(b.rates || {}).filter(([k, v]) => v != null && v !== 0);
+            return (
+              <div key={b.id} style={{
+                background: t.white, border: `1px solid ${t.border}`, borderRadius: "10px",
+                boxShadow: "0 1px 3px rgba(0,0,0,0.03)", overflow: "hidden",
+                borderLeft: `4px solid ${b.priority?.color || t.textTertiary}`,
+              }}>
+                <button onClick={() => toggleBooking(b.id)} style={{
+                  width: "100%", padding: "14px 18px", background: "none", border: "none",
+                  cursor: "pointer", textAlign: "left", fontFamily: "'Instrument Sans', sans-serif",
+                  display: "flex", flexDirection: "column", gap: "6px",
+                }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "10px" }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flex: 1, minWidth: 0 }}>
+                      {chevron(open)}
+                      <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                          <span style={{ fontSize: "14px", fontWeight: 700, color: t.text }}>{b.clientName}</span>
+                          {b.projectName && <span style={{ fontSize: "12.5px", color: t.textSecondary }}>&middot; {b.projectName}</span>}
+                          {b.priority && <Tag color={b.priority.color} bg={b.priority.bg} border={b.priority.border}>{b.priority.label}</Tag>}
+                        </div>
+                        <span style={{ fontSize: "11.5px", color: t.textTertiary, fontFamily: "monospace" }}>{fmtDateShort(b.startDate)} &ndash; {fmtDateShort(b.endDate)}</span>
+                      </div>
+                    </div>
+                    {!hide && <span style={{ fontSize: "15px", fontFamily: "monospace", fontWeight: 700, color: t.green }}>{fmt(b.billed)}</span>}
+                  </div>
+                  <div style={{ display: "flex", gap: "14px", fontSize: "12px", color: t.textSecondary, flexWrap: "wrap", paddingLeft: "18px" }}>
+                    <span><strong style={{ color: t.text, fontWeight: 700 }}>{b.hours}h</strong> worked</span>
+                    {!hide && b.rates?.day_rate && <span><strong style={{ color: t.text, fontWeight: 700 }}>{fmtWhole(b.rates.day_rate)}</strong> /day rate</span>}
+                    {b.ot > 0 && <span><strong style={{ color: t.yellow, fontWeight: 700 }}>{b.ot}h</strong> OT</span>}
+                  </div>
+                </button>
+                {open && (
+                  <div style={{ padding: "10px 18px 14px", display: "flex", flexDirection: "column", gap: "10px", borderTop: `1px solid ${t.borderLight}` }}>
+                    {!hide && rateEntries.length > 0 && (
+                      <div>
+                        <div style={{ fontSize: "10.5px", fontWeight: 700, color: t.textTertiary, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "4px" }}>Negotiated rates</div>
+                        <div style={{ display: "flex", gap: "14px", flexWrap: "wrap" }}>
+                          {rateEntries.map(([k, v]) => {
+                            const svc = SERVICE_TYPES.find(s => s.id === k);
+                            return (
+                              <div key={k} style={{ fontSize: "12.5px", color: t.textSecondary }}>
+                                <span style={{ color: t.textTertiary }}>{svc?.label || k}:</span>{" "}
+                                <strong style={{ color: t.text, fontWeight: 700, fontFamily: "monospace" }}>{fmt(v)}</strong>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                    {Object.keys(b.dailyHours).length > 0 ? (
+                      <div>
+                        <div style={{ fontSize: "10.5px", fontWeight: 700, color: t.textTertiary, textTransform: "uppercase", letterSpacing: "0.04em", marginBottom: "4px" }}>Daily hours</div>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "2px" }}>
+                          {Object.entries(b.dailyHours).sort((a, b) => a[0].localeCompare(b[0])).map(([date, hrs]) => (
+                            <div key={date} style={{ display: "flex", alignItems: "center", gap: "10px", fontSize: "12.5px", padding: "2px 0" }}>
+                              <span style={{ color: t.textSecondary, flex: 1, fontFamily: "monospace" }}>{fmtDateShort(date)}</span>
+                              <span style={{ color: t.textTertiary }}>{hrs}h</span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: "12.5px", color: t.textTertiary, fontStyle: "italic" }}>No hours logged against this booking within the current period/filters.</div>
+                    )}
+                    {b.notes && (
+                      <div style={{ fontSize: "12.5px", color: t.textSecondary, fontStyle: "italic", paddingTop: "6px", borderTop: `1px dashed ${t.borderLight}` }}>
+                        {b.notes}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

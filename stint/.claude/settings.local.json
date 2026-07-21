@@ -11,7 +11,12 @@
       "Bash(echo EXIT: $?:*)",
       "Bash(curl:*)",
       "Bash(node:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(gh repo:*)",
+      "Read(//d/AI/Claude/TimeSheet/stint_ledger/**)",
+      "Bash(git -C ../stint_ledger log --oneline --all --reverse)",
+      "Bash(git:*)",
+      "Bash(npx vite:*)"
     ]
   }
 }

@@ -16,6 +16,7 @@ const NAV_ITEMS: NavItem[] = [
   { id: 'expenses', label: 'Expenses', icon: '⊘' },
   { id: 'networth', label: 'Net Worth', icon: '◉' },
   { id: 'retirement', label: 'Retirement', icon: '◇' },
+  { id: 'export', label: 'Export', icon: '↗' },
 ];
 
 interface NavigationProps {

@@ -7,7 +7,8 @@ export interface PlannerSettings {
   vacationDays: number;
   holidays: number;
   sickDays: number;
-  monthlyExpenses: number;
+  monthlyExpensesFreelance: number;
+  monthlyExpensesFullTime: number;
   healthIns: number;
   equityReturn: number;
   rolloverReturn: number;
@@ -25,6 +26,25 @@ export interface PlannerSettings {
   ftOtherBenefits?: number;
 }
 
+/**
+ * Migrate legacy settings records that have the old `monthlyExpenses` field
+ * but not the new mode-specific fields. Returns a shallow-copied object.
+ */
+export function migrateLegacyExpenses(raw: Record<string, unknown>): Record<string, unknown> {
+  const legacy = raw.monthlyExpenses;
+  if (typeof legacy === 'number'
+    && raw.monthlyExpensesFreelance === undefined
+    && raw.monthlyExpensesFullTime === undefined) {
+    const { monthlyExpenses: _removed, ...rest } = raw;
+    return {
+      ...rest,
+      monthlyExpensesFreelance: legacy,
+      monthlyExpensesFullTime: legacy,
+    };
+  }
+  return raw;
+}
+
 export function usePlannerSettings(defaults: PlannerSettings) {
   const [settings, setSettings] = useState<PlannerSettings>(defaults);
   const [loaded, setLoaded] = useState(false);
@@ -38,7 +58,8 @@ export function usePlannerSettings(defaults: PlannerSettings) {
       try {
         const saved = await loadPlannerSettings();
         if (!cancelled && saved) {
-          setSettings(prev => ({ ...prev, ...(saved as Partial<PlannerSettings>) }));
+          const migrated = migrateLegacyExpenses(saved);
+          setSettings(prev => ({ ...prev, ...(migrated as Partial<PlannerSettings>) }));
         }
       } catch (e) {
         console.error('[planner-settings] Failed to load from IDB:', e);

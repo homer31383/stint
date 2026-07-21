@@ -115,6 +115,64 @@ export interface AccountBalances {
   ccDebt: number;
 }
 
+// Planner variable a custom account maps to
+export type CustomAccountType =
+  | 'checking'
+  | 'hys'
+  | 'moneyMarket'
+  | 'brokerage'
+  | 'tradIRA'
+  | 'rolloverIRA'
+  | 'hsa'
+  | 'ccDebt';
+
+// Visual section a custom account appears in
+export type SectionKey =
+  | 'cashChecking'
+  | 'credit'
+  | 'savings'
+  | 'nonRetirement'
+  | 'retirement'
+  | 'otherInvestments';
+
+export interface CustomAccount {
+  id: string;
+  name: string;
+  balance: number;
+  type: CustomAccountType;
+  section: SectionKey;
+}
+
+// Keys of the pre-populated fixed accounts — shared with NetWorth view
+export type FixedAccountKey =
+  | 'advRelationship' | 'santanderChecking' | 'advantageSavings'
+  | 'citiDoubleCash'
+  | 'highYieldSavings' | 'openbankHYS' | 'santanderMM'
+  | 'nonRetirement'
+  | 'traditionalIRA' | 'rolloverIRA'
+  | 'hsa';
+
+// A fund holding tracked under an investment account. When holdings exist for
+// an account, its effective balance is sum(shares * price) — the manually
+// entered number for that account is ignored.
+export interface FundHolding {
+  id: string;
+  ticker: string;
+  name: string;
+  shares: number;
+  price: number;
+  costBasis: number;
+}
+
+// Investment accounts that support a holdings sub-table in the NetWorth view.
+export type HoldingsAccountKey = 'nonRetirement' | 'traditionalIRA' | 'rolloverIRA';
+
+export const HOLDINGS_ENABLED_KEYS: HoldingsAccountKey[] = [
+  'nonRetirement',
+  'traditionalIRA',
+  'rolloverIRA',
+];
+
 // Individual account balances matching Simplifi structure
 export interface DetailedBalances {
   // Banking > Cash & Checking
@@ -134,9 +192,58 @@ export interface DetailedBalances {
   rolloverIRA: number;
   // Investments > Other
   hsa: number;
+  // User-added custom accounts
+  customAccounts?: CustomAccount[];
+  // Muted account identifiers (FixedAccountKey strings or CustomAccount.id strings).
+  // Muted accounts are excluded from all totals and planner aggregation.
+  mutedAccounts?: string[];
+  // Fund holdings per investment account. When present and non-empty, the
+  // sum of shares*price overrides the manually entered balance for that key.
+  holdings?: Partial<Record<HoldingsAccountKey, FundHolding[]>>;
   // Meta
   lastUpdated: number | null;
+  // When holding prices were last fetched from the market data API. Tracked
+  // separately from lastUpdated so the user can see price staleness even when
+  // balances haven't been hand-edited recently.
+  pricesUpdated?: number | null;
 }
+
+export function holdingMarketValue(h: FundHolding): number {
+  return h.shares * h.price;
+}
+
+export function holdingsTotal(list: FundHolding[] | undefined): number {
+  if (!list) return 0;
+  return list.reduce((s, h) => s + holdingMarketValue(h), 0);
+}
+
+export function holdingsCostBasisTotal(list: FundHolding[] | undefined): number {
+  if (!list) return 0;
+  return list.reduce((s, h) => s + h.costBasis, 0);
+}
+
+// Effective balance for a holdings-enabled key: holdings total if any, else manual.
+export function effectiveBalance(d: DetailedBalances, key: HoldingsAccountKey): number {
+  const list = d.holdings?.[key];
+  if (list && list.length > 0) return holdingsTotal(list);
+  return d[key] as number;
+}
+
+export const DEFAULT_HOLDINGS: Required<NonNullable<DetailedBalances['holdings']>> = {
+  nonRetirement: [
+    { id: 'brokerage-aepgx', ticker: 'AEPGX', name: 'American EuroPacific Growth Fund A', shares: 1921.267, price: 64.09, costBasis: 89669.65 },
+    { id: 'brokerage-anefx', ticker: 'ANEFX', name: 'American New Economy Fund Class A', shares: 4106.533, price: 83.64, costBasis: 162005.09 },
+    { id: 'brokerage-dodbx', ticker: 'DODBX', name: 'Dodge & Cox Balanced Fund Class I', shares: 3579.007, price: 13.53, costBasis: 37928.84 },
+  ],
+  traditionalIRA: [
+    { id: 'tradira-aepgx', ticker: 'AEPGX', name: 'American EuroPacific Growth Fund A', shares: 534.407, price: 64.09, costBasis: 23112.43 },
+    { id: 'tradira-anefx', ticker: 'ANEFX', name: 'American New Economy Fund Class A', shares: 1151.702, price: 83.64, costBasis: 43402.29 },
+    { id: 'tradira-dodbx', ticker: 'DODBX', name: 'Dodge & Cox Balanced Fund Class I', shares: 1553.352, price: 13.53, costBasis: 15899.46 },
+  ],
+  rolloverIRA: [
+    { id: 'rollover-spy', ticker: 'SPY', name: 'SPDR S&P 500 ETF', shares: 730, price: 733.55, costBasis: 491733.91 },
+  ],
+};
 
 export const DEFAULT_DETAILED: DetailedBalances = {
   advRelationship: 1727,
@@ -150,22 +257,42 @@ export const DEFAULT_DETAILED: DetailedBalances = {
   traditionalIRA: 141721,
   rolloverIRA: 505818,
   hsa: 8072,
+  customAccounts: [],
+  mutedAccounts: [],
+  holdings: {
+    nonRetirement: DEFAULT_HOLDINGS.nonRetirement,
+    traditionalIRA: DEFAULT_HOLDINGS.traditionalIRA,
+    rolloverIRA: DEFAULT_HOLDINGS.rolloverIRA,
+  },
   lastUpdated: null,
 };
 
 export function toAggregateBalances(d: DetailedBalances): AccountBalances {
-  return {
-    checking: d.advRelationship + d.santanderChecking + d.advantageSavings,
-    hys: d.highYieldSavings + d.openbankHYS,
-    moneyMarket: d.santanderMM,
-    brokerage: d.nonRetirement,
-    tradIRA: d.traditionalIRA,
-    rolloverIRA: d.rolloverIRA,
-    hsa: d.hsa,
-    ccDebt: d.citiDoubleCash,
+  const muted = new Set(d.mutedAccounts ?? []);
+  const f = (key: FixedAccountKey): number => {
+    if (muted.has(key)) return 0;
+    if (key === 'nonRetirement' || key === 'traditionalIRA' || key === 'rolloverIRA') {
+      return effectiveBalance(d, key);
+    }
+    return d[key] as number;
   };
+  const agg: AccountBalances = {
+    checking: f('advRelationship') + f('santanderChecking') + f('advantageSavings'),
+    hys: f('highYieldSavings') + f('openbankHYS'),
+    moneyMarket: f('santanderMM'),
+    brokerage: f('nonRetirement'),
+    tradIRA: f('traditionalIRA'),
+    rolloverIRA: f('rolloverIRA'),
+    hsa: f('hsa'),
+    ccDebt: f('citiDoubleCash'),
+  };
+  for (const acct of d.customAccounts ?? []) {
+    if (muted.has(acct.id)) continue;
+    agg[acct.type] += acct.balance;
+  }
+  return agg;
 }
 
 export const DEFAULT_BALANCES: AccountBalances = toAggregateBalances(DEFAULT_DETAILED);
 
-export type ViewId = 'dashboard' | 'utilization' | 'pipeline' | 'invoices' | 'planner' | 'expenses' | 'networth' | 'retirement';
+export type ViewId = 'dashboard' | 'utilization' | 'pipeline' | 'invoices' | 'planner' | 'expenses' | 'networth' | 'retirement' | 'export';

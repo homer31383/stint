@@ -47,6 +47,7 @@ stint/
   001_initial_schema.sql  # Table creation + indexes + RLS policies
   002_auth_rls.sql        # Auth-required RLS policy migration
   003_add_updated_at.sql  # Adds updated_at column to all tables
+  004_day_notes.sql       # Per-day notes table
   CLAUDE.md               # This file
   STINT_DISASTER_RECOVERY.md
   STINT_REBUILD_PROMPT.md
@@ -58,7 +59,7 @@ stint/
 The entire UI lives in `src/App.jsx` (~3170 lines). Do not split unless asked. Components:
 - **App** — root: auth gate, tab router, nav, data hooks, global search, getRate()
 - **Dashboard** — stats, quick-log, upcoming bookings, recent time
-- **Time** — weekly hour-grid timesheet (desktop grid / mobile day view), project color coding, batch fill, copy last week, undo (Ctrl+Z), timer. Project bar filters to booked projects by default.
+- **Time** — weekly hour-grid timesheet (desktop grid / mobile day view), project color coding, batch fill, copy last week, undo (Ctrl+Z), timer. Project bar filters to booked projects by default. Each day header has a small pencil icon (top-right) that opens a day-note modal; populated notes render as italic text under the day header (desktop) or as a banner above the hour list (mobile).
 - **Pencils** — bookings & pencils with edit modal, calendar view, conflict detection, priority levels (Booked/1st/2nd/3rd), per-booking rate cards
 - **Invoices** — day-based invoice creation from time entries, expense line items, status tracking (with paid date), printable PDF view
 - **Clients** — client CRUD with contacts array and per-client service rate overrides, project CRUD with production crew fields
@@ -106,6 +107,8 @@ Shared Supabase instance (`xxsjfeafpzzcmadyvuue`) with Axiom — **never touch n
 
 **stint_settings** — `id` (text PK, default "default"), `business_name`, `business_email`, `business_phone`, `business_address`, `bank_name`, `routing`, `account_number`, `invoice_prefix`, `next_invoice_number`, `payment_terms`, `hide_dollars`, `service_rates` (jsonb), `updated_at`
 
+**stint_day_notes** — `id` (text PK = ISO date string, one row per day), `note`, `created_at`, `updated_at`. Backs the per-day note feature on the Time tab.
+
 ### Indexes
 - `idx_stint_te_date` on time_entries(date)
 - `idx_stint_te_proj` on time_entries(project_id)
@@ -124,6 +127,7 @@ All tables have RLS enabled. Policy: `auth.uid() is not null` for all operations
 5. Manual: `ALTER TABLE stint_invoices ADD COLUMN IF NOT EXISTS paid_date text;`
 6. Manual: `ALTER TABLE stint_pencils ADD COLUMN IF NOT EXISTS client_id text;`
 7. Manual: `ALTER TABLE stint_pencils ADD COLUMN IF NOT EXISTS rates jsonb;`
+8. `004_day_notes.sql` — `stint_day_notes` table for per-day notes on the Time tab
 
 ## Service Types & Default Rates
 | ID | Label | Default Rate |

@@ -16,6 +16,8 @@ export interface SavedScenarioMetrics {
   annualSavingsFull: number;
   year5NetWorth: number;
   monthlyExpenses: number;
+  monthlyExpensesBase: number;
+  healthIns: number;
   monthlyRecurringTotal: number;
   oneTimeAnnualTotal: number;
 }

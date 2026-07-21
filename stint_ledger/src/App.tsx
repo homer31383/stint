@@ -15,6 +15,7 @@ import { Planner } from './views/Planner';
 import { NetWorth } from './views/NetWorth';
 import { Retirement } from './views/Retirement';
 import { Expenses } from './views/Expenses';
+import { Export } from './views/Export';
 
 class ErrorBoundary extends Component<
   { children: React.ReactNode; onReset: () => void },
@@ -143,6 +144,7 @@ export default function App() {
             <NetWorth detailed={detailed} balances={balances} onSave={setDetailed} monthlyExpenses={DEFAULT_MONTHLY_EXPENSES} />
           )}
           {view === 'retirement' && <Retirement balances={balances} />}
+          {view === 'export' && <Export data={data} balances={balances} detailed={detailed} />}
         </main>
       </div>
     </ErrorBoundary>

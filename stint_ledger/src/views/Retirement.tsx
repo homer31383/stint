@@ -21,7 +21,9 @@ interface ProjectionYear {
 
 const PLANNER_DEFAULTS = {
   dayRate: 1200, utilization: 0.55, vacationDays: 10, holidays: 10, sickDays: 5,
-  monthlyExpenses: 8750, healthIns: 1600, equityReturn: 0.07, rolloverReturn: 0.04,
+  monthlyExpensesFreelance: 7150, monthlyExpensesFullTime: 7150,
+  healthIns: 1600, ftHealthIns: 300,
+  equityReturn: 0.07, rolloverReturn: 0.07,
   cashReturn: 0.04, inflationRate: 0.03, fullFinancialPicture: true,
   includeBookings: true, includePencils: false, targetUtil: 0.5,
 };

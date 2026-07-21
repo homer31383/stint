@@ -5,7 +5,8 @@ import { Panel } from '../components/Panel';
 import { Slider } from '../components/Slider';
 import { estimateTaxes, estimateW2Taxes } from '../lib/tax';
 import { fmt, fmtPct, currentYear, weekdaysElapsedYTD, weekdaysBetween } from '../lib/helpers';
-import { usePlannerSettings } from '../hooks/usePlannerSettings';
+import { usePlannerSettings, migrateLegacyExpenses } from '../hooks/usePlannerSettings';
+import type { PlannerSettings } from '../hooks/usePlannerSettings';
 import { useExpenseModel } from '../hooks/useExpenseModel';
 import { useSavedScenarios } from '../hooks/useSavedScenarios';
 import type { SavedScenario, SavedScenarioMetrics } from '../hooks/useSavedScenarios';
@@ -16,6 +17,8 @@ interface Props {
 }
 
 const DEFAULT_HEALTH_INS = 1600;
+const DEFAULT_FT_HEALTH_INS = 300;
+const DEFAULT_MONTHLY_EXPENSES_BASE = 7150;
 
 export function Planner({ data, balances }: Props) {
   const year = currentYear();
@@ -34,10 +37,12 @@ export function Planner({ data, balances }: Props) {
       vacationDays: 10,
       holidays: 10,
       sickDays: 5,
-      monthlyExpenses: 8750,
+      monthlyExpensesFreelance: DEFAULT_MONTHLY_EXPENSES_BASE,
+      monthlyExpensesFullTime: DEFAULT_MONTHLY_EXPENSES_BASE,
       healthIns: DEFAULT_HEALTH_INS,
+      ftHealthIns: DEFAULT_FT_HEALTH_INS,
       equityReturn: 0.07,
-      rolloverReturn: 0.04,
+      rolloverReturn: 0.07,
       cashReturn: 0.04,
       inflationRate: 0.03,
       fullFinancialPicture: true,
@@ -136,7 +141,9 @@ export function Planner({ data, balances }: Props) {
 
   const dayRate = s.dayRate;
   const utilization = s.utilization;
-  const monthlyExpenses = s.monthlyExpenses;
+  const monthlyExpensesFreelance = s.monthlyExpensesFreelance;
+  const monthlyExpensesFullTime = s.monthlyExpensesFullTime;
+  const activeMonthlyExpenses = mode === 'fulltime' ? monthlyExpensesFullTime : monthlyExpensesFreelance;
   const healthIns = s.healthIns;
   const equityReturn = s.equityReturn;
   const rolloverReturn = s.rolloverReturn;
@@ -166,15 +173,14 @@ export function Planner({ data, balances }: Props) {
     // Investment returns (taxable brokerage) — nominal returns
     const monthlyInvestmentReturns = balances.brokerage * equityReturn / 12;
 
-    // Adjusted expenses (health insurance adjusts within)
-    const healthDelta = healthIns - DEFAULT_HEALTH_INS;
-    const adjustedExpenses = monthlyExpenses + healthDelta;
+    // Total expenses = freelance base expenses + freelance health insurance
+    const totalExpenses = monthlyExpensesFreelance + healthIns;
 
     // Freelance-only cash flow (toggle OFF)
-    const freelanceMonthlyCashFlow = taxes.netMonthly - adjustedExpenses;
+    const freelanceMonthlyCashFlow = taxes.netMonthly - totalExpenses;
 
     // Full cash flow including passive (toggle ON)
-    const fullMonthlyCashFlow = taxes.netMonthly + monthlyInterest + monthlyInvestmentReturns - adjustedExpenses;
+    const fullMonthlyCashFlow = taxes.netMonthly + monthlyInterest + monthlyInvestmentReturns - totalExpenses;
 
     // Toggle-aware values for snapshot display
     const monthlyCashFlow = fullPicture ? fullMonthlyCashFlow : freelanceMonthlyCashFlow;
@@ -204,7 +210,9 @@ export function Planner({ data, balances }: Props) {
       taxes,
       monthlyInterest,
       monthlyInvestmentReturns,
-      adjustedExpenses,
+      monthlyExpensesBase: monthlyExpensesFreelance,
+      healthIns,
+      totalExpenses,
       monthlyCashFlow,
       annualSavings,
       freelanceMonthlyCashFlow,
@@ -216,7 +224,7 @@ export function Planner({ data, balances }: Props) {
       monthlyNWGrowth,
       annualNWGrowth,
     };
-  }, [dayRate, utilization, monthlyExpenses, healthIns, equityReturn, rolloverReturn, cashReturn, balances, availableDays, availablePerMonth, fullPicture]);
+  }, [dayRate, utilization, monthlyExpensesFreelance, healthIns, equityReturn, rolloverReturn, cashReturn, balances, availableDays, availablePerMonth, fullPicture]);
 
   // Full-time calculations
   const ftCalc = useMemo(() => {
@@ -224,25 +232,24 @@ export function Planner({ data, balances }: Props) {
     const salary = s.ftSalary ?? 180000;
     const contrib401k = s.ftContribution401k ?? 23500;
     const employerMatch = s.ftEmployerMatch ?? 0.04;
-    const ftHealthIns = s.ftHealthIns ?? 200;
+    const ftHealthIns = s.ftHealthIns ?? DEFAULT_FT_HEALTH_INS;
     const ftOtherBenefits = s.ftOtherBenefits ?? 0;
 
     const taxes = estimateW2Taxes(salary, contrib401k);
     const employerMatchAnnual = salary * employerMatch;
     const total401kAnnual = contrib401k + employerMatchAnnual;
 
-    // Adjusted expenses (same pattern as freelance)
-    const healthDelta = ftHealthIns - DEFAULT_HEALTH_INS;
-    const adjustedExpenses = monthlyExpenses + healthDelta;
+    // Total expenses = FT base expenses + FT health insurance (independent)
+    const totalExpenses = monthlyExpensesFullTime + ftHealthIns;
 
     // Monthly cash flow (net take-home minus expenses)
     const monthlyInterestAlways = (balances.hys * cashReturn + balances.moneyMarket * cashReturn) / 12;
     const monthlyInvestmentReturnsAlways = balances.brokerage * equityReturn / 12;
     const monthlyInterest = fullPicture ? monthlyInterestAlways : 0;
     const monthlyInvestmentReturns = fullPicture ? monthlyInvestmentReturnsAlways : 0;
-    const incomeOnlyMonthlyCashFlow = taxes.netMonthly - adjustedExpenses;
-    const fullMonthlyCashFlow = taxes.netMonthly + monthlyInterestAlways + monthlyInvestmentReturnsAlways - adjustedExpenses;
-    const monthlyCashFlow = taxes.netMonthly + monthlyInterest + monthlyInvestmentReturns - adjustedExpenses;
+    const incomeOnlyMonthlyCashFlow = taxes.netMonthly - totalExpenses;
+    const fullMonthlyCashFlow = taxes.netMonthly + monthlyInterestAlways + monthlyInvestmentReturnsAlways - totalExpenses;
+    const monthlyCashFlow = taxes.netMonthly + monthlyInterest + monthlyInvestmentReturns - totalExpenses;
 
     // Retirement account growth (same as freelance calc)
     const annualRetirementGrowth =
@@ -252,7 +259,7 @@ export function Planner({ data, balances }: Props) {
     const monthlyRetirementGrowth = annualRetirementGrowth / 12;
 
     // Total NW growth
-    const freelanceMonthlyCashFlow = taxes.netMonthly - adjustedExpenses;
+    const freelanceMonthlyCashFlow = taxes.netMonthly - totalExpenses;
     const monthlyNWGrowth =
       freelanceMonthlyCashFlow +
       (balances.hys * cashReturn + balances.moneyMarket * cashReturn) / 12 +
@@ -264,7 +271,8 @@ export function Planner({ data, balances }: Props) {
     return {
       salary, contrib401k, employerMatchAnnual, total401kAnnual,
       taxes, ftHealthIns, ftOtherBenefits,
-      adjustedExpenses, monthlyCashFlow,
+      monthlyExpensesBase: monthlyExpensesFullTime,
+      totalExpenses, monthlyCashFlow,
       monthlyInterest, monthlyInvestmentReturns,
       incomeOnlyMonthlyCashFlow,
       incomeOnlyAnnualSavings: incomeOnlyMonthlyCashFlow * 12,
@@ -274,7 +282,7 @@ export function Planner({ data, balances }: Props) {
       monthlyRetirementGrowth, annualRetirementGrowth,
       monthlyNWGrowth, annualNWGrowth,
     };
-  }, [mode, s, monthlyExpenses, fullPicture, balances, cashReturn, equityReturn, rolloverReturn]);
+  }, [mode, s, monthlyExpensesFullTime, fullPicture, balances, cashReturn, equityReturn, rolloverReturn]);
 
   // Scenario comparison
   const scenarios = useMemo(() => {
@@ -294,11 +302,11 @@ export function Planner({ data, balances }: Props) {
       const t = estimateTaxes(gross);
       const daysPerMonth = Math.round(availablePerMonth * c.util);
       const passiveAnnual = fullPicture ? (calc.monthlyInterest + calc.monthlyInvestmentReturns) * 12 : 0;
-      const savings = t.netAnnual + passiveAnnual - calc.adjustedExpenses * 12;
+      const savings = t.netAnnual + passiveAnnual - calc.totalExpenses * 12;
       const isCurrent = c.rate === dayRate && c.util === utilization;
       return { ...c, gross, net: t.netAnnual, savings, daysPerMonth, isCurrent };
     });
-  }, [dayRate, utilization, calc.adjustedExpenses, calc.monthlyInterest, calc.monthlyInvestmentReturns, fullPicture, availableDays, availablePerMonth]);
+  }, [dayRate, utilization, calc.totalExpenses, calc.monthlyInterest, calc.monthlyInvestmentReturns, fullPicture, availableDays, availablePerMonth]);
 
   // 5-year projection
   const projection = useMemo(() => {
@@ -344,13 +352,20 @@ export function Planner({ data, balances }: Props) {
     return years;
   }, [balances, realCashReturn, realEquityReturn, realRolloverReturn, calc.fullAnnualSavings, year, mode, ftCalc]);
 
-  // Rollover IRA deployment comparison — uses real returns
+  // Rollover IRA growth scenarios — SPY at 7% is current, others shown for context
   const rolloverComparison = useMemo(() => {
-    const nominalRates = [0.04, 0.07, 0.10, 0.12];
-    return nominalRates.map((r) => {
-      const real = r - inflationRate;
+    const scenarios: { rate: number; label: string; current: boolean }[] = [
+      { rate: 0.04, label: 'Cash / HYS', current: false },
+      { rate: 0.07, label: 'SPY (S&P 500)', current: true },
+      { rate: 0.10, label: 'Long-term S&P avg', current: false },
+      { rate: 0.12, label: 'Aggressive growth', current: false },
+    ];
+    return scenarios.map((sc) => {
+      const real = sc.rate - inflationRate;
       return {
-        rate: r,
+        rate: sc.rate,
+        label: sc.label,
+        current: sc.current,
         realRate: real,
         values: Array.from({ length: 6 }, (_, y) => balances.rolloverIRA * Math.pow(1 + real, y)),
       };
@@ -385,7 +400,9 @@ export function Planner({ data, balances }: Props) {
     annualSavingsIncomeOnly: mode === 'fulltime' && ftCalc ? ftCalc.incomeOnlyAnnualSavings : calc.freelanceAnnualSavings,
     annualSavingsFull: mode === 'fulltime' && ftCalc ? ftCalc.fullAnnualSavings : calc.fullAnnualSavings,
     year5NetWorth: projection[5]?.total ?? 0,
-    monthlyExpenses: mode === 'fulltime' && ftCalc ? ftCalc.adjustedExpenses : calc.adjustedExpenses,
+    monthlyExpenses: mode === 'fulltime' && ftCalc ? ftCalc.totalExpenses : calc.totalExpenses,
+    monthlyExpensesBase: mode === 'fulltime' && ftCalc ? ftCalc.monthlyExpensesBase : calc.monthlyExpensesBase,
+    healthIns: mode === 'fulltime' && ftCalc ? ftCalc.ftHealthIns : calc.healthIns,
     monthlyRecurringTotal: expenseRecurringTotal,
     oneTimeAnnualTotal: expenseOneTimeTotal,
   }), [mode, s, ftCalc, calc, projection, expenseRecurringTotal, expenseOneTimeTotal]);
@@ -398,9 +415,10 @@ export function Planner({ data, balances }: Props) {
 
   const handleLoadScenario = useCallback((scenario: SavedScenario) => {
     if (!confirm('This will replace your current planner settings and expense model. Continue?')) return;
-    const keys = Object.keys(scenario.settings) as (keyof typeof scenario.settings)[];
+    const migrated = migrateLegacyExpenses(scenario.settings as unknown as Record<string, unknown>) as unknown as PlannerSettings;
+    const keys = Object.keys(migrated) as (keyof PlannerSettings)[];
     for (const key of keys) {
-      update(key, scenario.settings[key] as never);
+      update(key, migrated[key] as never);
     }
     if (scenario.expenseModel) {
       replaceExpenseModel(scenario.expenseModel);
@@ -705,7 +723,9 @@ export function Planner({ data, balances }: Props) {
                   { label: 'Utilization', key: 'utilization', format: (v: string | number) => typeof v === 'number' ? fmtPct(v) : String(v), hideIf: (m: SavedScenarioMetrics) => m.mode === 'fulltime' },
                   { label: 'Gross Annual', key: 'grossAnnual', format: (v: string | number) => fmt(v as number) },
                   { label: 'Net Annual', key: 'netAnnual', format: (v: string | number) => fmt(v as number) },
-                  { label: 'Monthly Expenses', key: 'monthlyExpenses', format: (v: string | number) => fmt(v as number), invert: true },
+                  { label: 'Monthly Expenses', key: 'monthlyExpensesBase', format: (v: string | number) => typeof v === 'number' ? fmt(v) : '—', invert: true },
+                  { label: 'Health Insurance', key: 'healthIns', format: (v: string | number) => typeof v === 'number' ? fmt(v) : '—', invert: true },
+                  { label: 'Total Expenses', key: 'monthlyExpenses', format: (v: string | number) => fmt(v as number), invert: true },
                   { label: 'Recurring Expenses', key: 'monthlyRecurringTotal', format: (v: string | number) => fmt(v as number), invert: true },
                   { label: 'One-Time (Annual)', key: 'oneTimeAnnualTotal', format: (v: string | number) => fmt(v as number), invert: true },
                   { label: 'Cash Flow (income only)', key: 'monthlyCashFlowIncomeOnly', format: (v: string | number) => fmt(v as number) },
@@ -785,7 +805,7 @@ export function Planner({ data, balances }: Props) {
             <Slider label="Salary" value={s.ftSalary ?? 180000} min={100000} max={350000} step={5000} format={fmt} onChange={(v) => update('ftSalary', v)} />
             <Slider label="401k Contribution" value={s.ftContribution401k ?? 23500} min={0} max={23500} step={500} format={fmt} onChange={(v) => update('ftContribution401k', v)} sub="Employee pre-tax (2025 limit $23,500)" />
             <Slider label="Employer Match" value={s.ftEmployerMatch ?? 0.04} min={0} max={0.10} step={0.005} format={(v) => fmtPct(v, 1)} onChange={(v) => update('ftEmployerMatch', v)} sub={`${fmt((s.ftSalary ?? 180000) * (s.ftEmployerMatch ?? 0.04))}/yr employer contribution`} />
-            <Slider label="Health Insurance" value={s.ftHealthIns ?? 200} min={0} max={800} step={25} format={fmt} onChange={(v) => update('ftHealthIns', v)} sub="Monthly employee share" />
+            <Slider label="Health Insurance" value={s.ftHealthIns ?? DEFAULT_FT_HEALTH_INS} min={0} max={800} step={25} format={fmt} onChange={(v) => update('ftHealthIns', v)} sub={`Employer-subsidized · Total w/ expenses: ${fmt(activeMonthlyExpenses + (s.ftHealthIns ?? DEFAULT_FT_HEALTH_INS))}/mo`} />
             <Slider label="Other Benefits" value={s.ftOtherBenefits ?? 0} min={0} max={1000} step={50} format={fmt} onChange={(v) => update('ftOtherBenefits', v)} sub="Dental, vision, etc. (monthly value)" />
           </>
         ) : (
@@ -796,13 +816,22 @@ export function Planner({ data, balances }: Props) {
           </>
         )}
 
-        <Slider label="Monthly Expenses" value={monthlyExpenses} min={6000} max={14000} step={250} format={fmt} onChange={(v) => update('monthlyExpenses', v)} />
+        <Slider
+          label="Monthly Expenses"
+          value={activeMonthlyExpenses} min={4000} max={12000} step={250}
+          format={fmt}
+          onChange={(v) => update(
+            mode === 'fulltime' ? 'monthlyExpensesFullTime' : 'monthlyExpensesFreelance',
+            v,
+          )}
+          sub={`Excludes health insurance · ${mode === 'fulltime' ? 'Full-Time' : 'Freelance'} only`}
+        />
         {mode === 'freelance' && (
           <Slider
             label="Health Insurance"
             value={healthIns} min={400} max={2400} step={100}
             format={fmt} onChange={(v) => update('healthIns', v)}
-            sub="Adjusts within total expenses"
+            sub={`Total w/ expenses: ${fmt(activeMonthlyExpenses + healthIns)}/mo`}
           />
         )}
 
@@ -811,7 +840,7 @@ export function Planner({ data, balances }: Props) {
           label="Rollover IRA Return"
           value={rolloverReturn} min={0} max={0.15} step={0.01}
           format={(v) => fmtPct(v)} onChange={(v) => update('rolloverReturn', v)}
-          sub="Currently in HYS — slide up to model deploying"
+          sub="Deployed in SPY (S&P 500 ETF) — defaults to equity return"
         />
         <Slider label="Cash Return (HYS/MM)" value={cashReturn} min={0} max={0.07} step={0.005} format={(v) => fmtPct(v, 1)} onChange={(v) => update('cashReturn', v)} />
 
@@ -863,14 +892,15 @@ export function Planner({ data, balances }: Props) {
               <StatCard label="Est. Taxes" value={fmt(ftCalc.taxes.totalTax / 12)} color="text-negative" sub={fmtPct(ftCalc.taxes.effectiveRate)} />
               <StatCard label="401k Withheld" value={fmt(ftCalc.contrib401k / 12)} color="text-retirement" sub="Pre-tax" />
               <StatCard label="Net Take-Home" value={fmt(ftCalc.taxes.netMonthly)} color="text-positive" />
-              <StatCard label="Health Insurance" value={fmt(ftCalc.ftHealthIns)} color="text-negative" sub="Employee share" />
               {fullPicture && (
                 <>
                   <StatCard label="Interest Income" value={fmt(ftCalc.monthlyInterest)} color="text-highlight" />
                   <StatCard label="Investment Returns" value={fmt(ftCalc.monthlyInvestmentReturns)} color="text-accent" />
                 </>
               )}
-              <StatCard label="Expenses" value={fmt(ftCalc.adjustedExpenses)} color="text-negative" />
+              <StatCard label="Expenses" value={fmt(ftCalc.monthlyExpensesBase)} color="text-negative" sub="Excl. health" />
+              <StatCard label="Health Insurance" value={fmt(ftCalc.ftHealthIns)} color="text-negative" sub="Employee share" />
+              <StatCard label="Total Expenses" value={fmt(ftCalc.totalExpenses)} color="text-negative" />
               <StatCard label="Net Cash Flow" value={fmt(ftCalc.monthlyCashFlow)} color={ftCalc.monthlyCashFlow >= 0 ? 'text-positive' : 'text-negative'} />
               {fullPicture && (
                 <>
@@ -890,7 +920,9 @@ export function Planner({ data, balances }: Props) {
                   <StatCard label="Investment Returns" value={fmt(calc.monthlyInvestmentReturns)} color="text-accent" />
                 </>
               )}
-              <StatCard label="Expenses" value={fmt(calc.adjustedExpenses)} color="text-negative" />
+              <StatCard label="Expenses" value={fmt(calc.monthlyExpensesBase)} color="text-negative" sub="Excl. health" />
+              <StatCard label="Health Insurance" value={fmt(calc.healthIns)} color="text-negative" />
+              <StatCard label="Total Expenses" value={fmt(calc.totalExpenses)} color="text-negative" />
               <StatCard label="Net Cash Flow" value={fmt(calc.monthlyCashFlow)} color={calc.monthlyCashFlow >= 0 ? 'text-positive' : 'text-negative'} />
               {fullPicture && (
                 <>
@@ -1073,15 +1105,16 @@ export function Planner({ data, balances }: Props) {
         </div>
       </Panel>
 
-      {/* Rollover IRA Deployment */}
-      <Panel title="Rollover IRA Deployment Comparison">
+      {/* Rollover IRA Growth Scenarios */}
+      <Panel title="Rollover IRA Growth Scenarios">
         <p className="text-xs text-gray-500 mb-3">
-          What {fmt(balances.rolloverIRA)} becomes over 5 years at different return rates (real, after {fmtPct(inflationRate, 1)} inflation)
+          Current: SPY at 7% nominal. What {fmt(balances.rolloverIRA)} becomes over 5 years vs. alternative return rates (real, after {fmtPct(inflationRate, 1)} inflation).
         </p>
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="text-gray-500 text-xs">
+                <th className="text-left py-1">Scenario</th>
                 <th className="text-left py-1">Nominal</th>
                 <th className="text-left py-1">Real</th>
                 {Array.from({ length: 6 }, (_, i) => (
@@ -1091,11 +1124,15 @@ export function Planner({ data, balances }: Props) {
             </thead>
             <tbody>
               {rolloverComparison.map((r) => (
-                <tr key={r.rate} className="border-t border-surface-3">
+                <tr key={r.rate} className={`border-t border-surface-3 ${r.current ? 'bg-positive/5' : ''}`}>
+                  <td className={`py-2 ${r.current ? 'text-positive font-medium' : 'text-gray-400'}`}>
+                    {r.label}
+                    {r.current && <span className="ml-1.5 text-[10px] uppercase tracking-wider text-positive/80">Current</span>}
+                  </td>
                   <td className="py-2 text-gray-300">{fmtPct(r.rate)}</td>
                   <td className="py-2 text-gray-500">{fmtPct(r.realRate)}</td>
                   {r.values.map((v, i) => (
-                    <td key={i} className="py-2 text-right font-mono text-gray-300 text-xs">{fmt(v)}</td>
+                    <td key={i} className={`py-2 text-right font-mono text-xs ${r.current ? 'text-positive' : 'text-gray-300'}`}>{fmt(v)}</td>
                   ))}
                 </tr>
               ))}

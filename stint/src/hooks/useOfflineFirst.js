@@ -8,6 +8,7 @@ const TABLE_MAP = {
   pencils: "stint_pencils",
   invoices: "stint_invoices",
   settings: "stint_settings",
+  dayNotes: "stint_day_notes",
 };
 
 const loadLocal = (key, fb) => {
@@ -58,6 +59,11 @@ export function useOfflineFirst(key, fallback) {
         if (!error && rem) {
           setDataRaw(prev => {
             const local = (prev || []).filter(isLocalOnly);
+            const localSynced = (prev || []).filter(i => !isLocalOnly(i));
+            if (rem.length === 0 && localSynced.length > 0) {
+              console.warn(`[sync] Skipping pull for ${table}: remote returned empty but local has ${localSynced.length} synced item(s) — keeping local`);
+              return prev;
+            }
             return [...rem.map(snakeToCamel), ...local];
           });
         }
