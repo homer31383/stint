@@ -13,6 +13,8 @@ export interface TickerRow {
   name?: string; // Yahoo display name (shortName, falling back to longName)
   marketState?: string; // PRE | REGULAR | POST | CLOSED etc, straight from Yahoo
   asOf?: number; // epoch seconds of the last regular market trade
+  afterHoursPrice?: number; // last post market bar, 1D only
+  afterHoursPct?: number; // percent change of that bar vs the regular close
   error?: string;
 }
 
@@ -60,7 +62,11 @@ function num(v: unknown): number | null {
 async function fetchOne(symbol: string, rangeKey: RangeKey): Promise<TickerRow> {
   try {
     const { range, interval } = RANGES[rangeKey];
-    const url = `${YAHOO_BASE}${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`;
+    // 1D asks for pre/post bars so the after-hours move can be derived; the
+    // extra bars are filtered back out of the sparkline series below, so the
+    // regular-session-only chart behavior is unchanged.
+    const prePost = rangeKey === '1D' ? '&includePrePost=true' : '';
+    const url = `${YAHOO_BASE}${encodeURIComponent(symbol)}?range=${range}&interval=${interval}${prePost}`;
     const res = await fetch(url, {
       // Yahoo rejects requests with no browser-like user agent from cloud IPs.
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
@@ -74,11 +80,31 @@ async function fetchOne(symbol: string, rangeKey: RangeKey): Promise<TickerRow> 
       return { symbol, ok: false, error: 'no previous close in response' };
     }
     const rawCloses = result?.indicators?.quote?.[0]?.close;
-    const closes: number[] = Array.isArray(rawCloses)
-      ? rawCloses.filter((c: unknown): c is number => num(c) != null)
-      : [];
+    const rawTimes = result?.timestamp;
+    const regStart = num(meta?.currentTradingPeriod?.regular?.start);
+    const regEnd = num(meta?.currentTradingPeriod?.regular?.end);
+    let closes: number[] = [];
+    let afterHoursPrice: number | undefined;
+    if (Array.isArray(rawCloses)) {
+      if (rangeKey === '1D' && Array.isArray(rawTimes) && regStart != null && regEnd != null) {
+        // Split bars by session: regular bars feed the sparkline, the last
+        // post market bar becomes the after-hours price. Pre market bars are
+        // dropped, matching what Yahoo returns without includePrePost.
+        for (let i = 0; i < rawCloses.length; i++) {
+          const c = num(rawCloses[i]);
+          const ts = num(rawTimes[i]);
+          if (c == null || ts == null) continue;
+          if (ts >= regStart && ts <= regEnd) closes.push(c);
+          else if (ts > regEnd) afterHoursPrice = c;
+        }
+      } else {
+        closes = rawCloses.filter((c: unknown): c is number => num(c) != null);
+      }
+    }
     const price = num(meta?.regularMarketPrice) ?? (closes.length ? closes[closes.length - 1] : null);
     if (price == null) return { symbol, ok: false, error: 'no price in response' };
+    const afterHoursPct =
+      afterHoursPrice != null && price > 0 ? ((afterHoursPrice - price) / price) * 100 : undefined;
     const name =
       typeof meta?.shortName === 'string' && meta.shortName
         ? meta.shortName
@@ -94,6 +120,8 @@ async function fetchOne(symbol: string, rangeKey: RangeKey): Promise<TickerRow> 
       name,
       marketState: typeof meta?.marketState === 'string' ? meta.marketState : undefined,
       asOf: num(meta?.regularMarketTime) ?? undefined,
+      afterHoursPrice,
+      afterHoursPct,
     };
   } catch (e) {
     return { symbol, ok: false, error: e instanceof Error ? e.message : String(e) };

@@ -3,11 +3,35 @@
 // components, and the watchlist persists to localStorage only, never the
 // app's IndexedDB or sync layer. See src/main.tsx for the route branch.
 //
-// Kept dumb on purpose. TODO if ever wanted: auto refresh interval, tap for
-// a bigger chart, timeframe switcher. Not building these now.
+// Visual language: biophilic (moss, clay, sand) with 3D percent pills. All
+// colors and the intensity ramp live in ./theme.ts.
+//
+// Kept dumb on purpose. TODO if ever wanted: auto refresh interval. Not
+// building it now.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { TickerSparkline, BAND, intensityColor, intensityTint } from './TickerSparkline';
+import { TickerSparkline, BAND } from './TickerSparkline';
+import {
+  PAGE_BG,
+  PAGE_GRADIENT,
+  CARD_BG,
+  CARD_BORDER,
+  CARD_RADIUS,
+  CARD_SHADOW,
+  TEXT,
+  TEXT_DIM,
+  ACCENT,
+  ACCENT_BG,
+  STONE,
+  GAIN_TEXT,
+  LOSS_TEXT,
+  SEG_BG,
+  SEG_SHADOW,
+  SEG_ACTIVE_BG,
+  SEG_ACTIVE_SHADOW,
+  pillStyle,
+  cardShadow,
+} from './theme';
 
 const DEFAULT_WATCHLIST = [
   '^GSPC', '^DJI', '^IXIC', '^RUT',
@@ -53,7 +77,7 @@ const PERIOD_LABELS: Record<Timeframe, string | null> = {
 // Change over the selected timeframe. On 1D the reference is the previous
 // close; on longer ranges it is the first close in the period, so the
 // percent change is (last - first) / first.
-function changeFor(row: TickerRow, is1D: boolean): { pct: number; series: number[] } | null {
+function changeFor(row: TickerRow, is1D: boolean): { pct: number; series: number[]; ref: number } | null {
   if (!row.ok || row.price == null) return null;
   const closes = row.closes ?? [];
   const ref = is1D ? row.prevClose : closes.length > 0 ? closes[0] : null;
@@ -61,6 +85,7 @@ function changeFor(row: TickerRow, is1D: boolean): { pct: number; series: number
   return {
     pct: ((row.price - ref) / ref) * 100,
     series: closes.map((c) => ((c - ref) / ref) * 100),
+    ref,
   };
 }
 
@@ -73,6 +98,8 @@ interface TickerRow {
   name?: string;
   marketState?: string;
   asOf?: number;
+  afterHoursPrice?: number;
+  afterHoursPct?: number;
   error?: string;
 }
 
@@ -111,6 +138,16 @@ function useTickersHead() {
     document.title = 'Tickers';
     document.querySelector('link[rel="manifest"]')?.setAttribute('href', '/tickers.webmanifest');
     document.querySelector('link[rel="icon"]')?.setAttribute('href', '/tickers-icon.svg');
+    document.querySelector('meta[name="theme-color"]')?.setAttribute('content', '#f2f3e8');
+    // Serif wordmark font, loaded only on this route so the finance app
+    // never pays for it.
+    if (!document.getElementById('tickers-fraunces')) {
+      const link = document.createElement('link');
+      link.id = 'tickers-fraunces';
+      link.rel = 'stylesheet';
+      link.href = 'https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,600&display=swap';
+      document.head.appendChild(link);
+    }
     // No cleanup: this page never navigates back into the finance app.
   }, []);
 }
@@ -125,28 +162,145 @@ function fmtPct(v: number): string {
   return `${v >= 0 ? '+' : ''}${v.toFixed(Math.abs(v) >= 100 ? 0 : 2)}%`;
 }
 
+function signColor(v: number): string {
+  if (v > 0) return GAIN_TEXT;
+  if (v < 0) return LOSS_TEXT;
+  return TEXT_DIM;
+}
+
+const SERIF = "'Fraunces', Georgia, 'Times New Roman', serif";
+
+// The signature element: percent change as a physical pill. A pin dot marks
+// a value clamped at the band edge.
+function Pill({ pct, scale, pinned }: { pct: number; scale: number; pinned: boolean }) {
+  return (
+    <span
+      className="inline-flex items-center gap-1.5 rounded-full font-mono font-semibold"
+      style={{ ...pillStyle(pct, scale, pinned), padding: '3px 11px', fontSize: 15, lineHeight: '20px' }}
+    >
+      {pinned && (
+        <span
+          aria-label={`Clamped at ${pct >= 0 ? '+' : '-'}${scale}% band edge`}
+          style={{
+            width: 5,
+            height: 5,
+            borderRadius: '50%',
+            background: 'rgba(255,255,255,0.95)',
+            boxShadow: '0 0 5px rgba(255,255,255,0.85)',
+          }}
+        />
+      )}
+      {fmtPct(pct)}
+    </span>
+  );
+}
+
+function SectionLabel({ children }: { children: string }) {
+  return (
+    <div
+      className="uppercase mt-4 mb-2 px-1"
+      style={{ color: TEXT_DIM, fontSize: 10, letterSpacing: '0.22em', fontWeight: 600 }}
+    >
+      {children}
+    </div>
+  );
+}
+
+const cardStyle = (shadow: string = CARD_SHADOW): React.CSSProperties => ({
+  background: CARD_BG,
+  border: `1px solid ${CARD_BORDER}`,
+  borderRadius: CARD_RADIUS,
+  boxShadow: shadow,
+});
+
+// Expanded detail: a larger sparkline plus the row's numbers in a light grid.
+function DetailPanel({ row, change, is1D, band, colorScale }: {
+  row: TickerRow;
+  change: { pct: number; series: number[]; ref: number };
+  is1D: boolean;
+  band: number;
+  colorScale: number;
+}) {
+  const { pct, series, ref } = change;
+  const closes = row.closes ?? [];
+  const stats: Array<{ label: string; value: string; color?: string }> = [
+    { label: 'Price', value: fmtPrice(row.price!) },
+    { label: is1D ? 'Prev close' : 'Period start', value: fmtPrice(ref) },
+    { label: 'Change', value: `${pct >= 0 ? '+' : '-'}${fmtPrice(Math.abs(row.price! - ref))}`, color: signColor(pct) },
+  ];
+  if (closes.length > 0) {
+    stats.push(
+      { label: 'High', value: fmtPrice(Math.max(...closes)) },
+      { label: 'Low', value: fmtPrice(Math.min(...closes)) },
+    );
+  }
+  if (is1D && row.afterHoursPct != null && row.afterHoursPrice != null) {
+    stats.push({
+      label: 'After hours',
+      value: `☾ ${fmtPrice(row.afterHoursPrice)} (${fmtPct(row.afterHoursPct)})`,
+      color: signColor(row.afterHoursPct),
+    });
+  }
+  return (
+    <div className="mt-3 pt-3" style={{ borderTop: `1px solid ${CARD_BORDER}` }}>
+      <TickerSparkline
+        series={series}
+        changePct={pct}
+        mode={is1D ? 'band' : 'auto'}
+        band={band}
+        colorScale={colorScale}
+        width={320}
+        height={84}
+        fluid
+      />
+      <div className="grid grid-cols-3 gap-2 mt-3">
+        {stats.map((s) => (
+          <div
+            key={s.label}
+            style={{
+              background: 'rgba(231,238,219,0.55)',
+              borderRadius: 12,
+              padding: '6px 9px',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7)',
+            }}
+          >
+            <div className="uppercase" style={{ color: TEXT_DIM, fontSize: 9, letterSpacing: '0.14em' }}>
+              {s.label}
+            </div>
+            <div className="font-mono" style={{ color: s.color ?? TEXT, fontSize: 12, fontWeight: 500 }}>
+              {s.value}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 interface RowProps {
   symbol: string;
   row: TickerRow | undefined;
   timeframe: Timeframe;
   band: number;
   colorScale: number; // color denominator: band on 1D, biggest mover otherwise
+  expanded: boolean;
+  onToggle: () => void;
 }
 
-function Row({ symbol, row, timeframe, band, colorScale }: RowProps) {
+function Row({ symbol, row, timeframe, band, colorScale, expanded, onToggle }: RowProps) {
   const is1D = timeframe === '1D';
   const change = row ? changeFor(row, is1D) : null;
 
   // row undefined means still loading, no usable change means that symbol failed.
   if (!row || !change) {
     return (
-      <div className="flex items-center gap-3 py-3 border-b border-surface-2 last:border-b-0">
+      <div className="flex items-center gap-3 mb-2.5 px-3.5 py-3" style={cardStyle()}>
         <div className="flex-1 min-w-0">
-          <div className="font-mono text-sm text-gray-300">{symbol}</div>
-          <div className="text-xs text-gray-500 truncate">{row?.name ?? ''}</div>
+          <div className="font-mono text-sm font-semibold" style={{ color: TEXT }}>{symbol}</div>
+          <div className="text-xs truncate" style={{ color: TEXT_DIM }}>{row?.name ?? ''}</div>
         </div>
-        <div className="text-right shrink-0">
-          <div className="text-sm text-gray-500">{row ? 'Unavailable' : '...'}</div>
+        <div className="text-right shrink-0 text-sm italic" style={{ color: row ? LOSS_TEXT : TEXT_DIM }}>
+          {row ? 'Unavailable' : '...'}
         </div>
         <TickerSparkline series={[]} changePct={0} mode={is1D ? 'band' : 'auto'} band={band} colorScale={colorScale} />
       </div>
@@ -154,46 +308,75 @@ function Row({ symbol, row, timeframe, band, colorScale }: RowProps) {
   }
 
   const { pct, series } = change;
+  // Pinned: the day's move is clamped at the band edge. Only meaningful on
+  // the fixed-band 1D view; longer timeframes auto-scale and never clamp.
+  const pinned = is1D && Math.abs(pct) >= band;
 
   return (
     <div
-      className="flex items-center gap-3 py-3 border-b border-surface-2 last:border-b-0"
-      style={{ backgroundColor: intensityTint(pct, colorScale) }}
+      className="mb-2.5 px-3.5 py-3 cursor-pointer select-none"
+      style={cardStyle(cardShadow(pinned, pct >= 0))}
+      onClick={onToggle}
+      role="button"
+      aria-expanded={expanded}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          onToggle();
+        }
+      }}
     >
-      <div className="flex-1 min-w-0">
-        <div className="font-mono text-sm text-gray-300">{row.symbol}</div>
-        <div className="text-xs text-gray-500 truncate">{row.name ?? ''}</div>
-      </div>
-      <div className="text-right shrink-0">
-        {/* Percent change is the primary number, price is secondary. */}
-        <div className="font-mono text-xl font-semibold" style={{ color: intensityColor(pct, colorScale) }}>
-          {fmtPct(pct)}
+      <div className="flex items-center gap-3">
+        <div className="flex-1 min-w-0">
+          <div className="font-mono text-sm font-semibold" style={{ color: TEXT }}>{row.symbol}</div>
+          <div className="text-xs truncate" style={{ color: TEXT_DIM }}>{row.name ?? ''}</div>
         </div>
-        <div className="font-mono text-xs text-gray-500">{fmtPrice(row.price!)}</div>
+        <div className="shrink-0 flex flex-col items-end gap-0.5">
+          {/* Percent change is the primary number, price is secondary. */}
+          <Pill pct={pct} scale={colorScale} pinned={pinned} />
+          <div className="font-mono text-xs" style={{ color: TEXT_DIM }}>{fmtPrice(row.price!)}</div>
+          {is1D && row.afterHoursPct != null && (
+            <div className="font-mono" style={{ color: signColor(row.afterHoursPct), fontSize: 10 }}>
+              {'☾'} {fmtPct(row.afterHoursPct)}
+            </div>
+          )}
+        </div>
+        <TickerSparkline
+          series={series}
+          changePct={pct}
+          mode={is1D ? 'band' : 'auto'}
+          band={band}
+          colorScale={colorScale}
+        />
       </div>
-      <TickerSparkline
-        series={series}
-        changePct={pct}
-        mode={is1D ? 'band' : 'auto'}
-        band={band}
-        colorScale={colorScale}
-      />
+      {expanded && <DetailPanel row={row} change={change} is1D={is1D} band={band} colorScale={colorScale} />}
     </div>
   );
+}
+
+function segStyle(active: boolean): React.CSSProperties {
+  return active
+    ? { background: SEG_ACTIVE_BG, color: '#ffffff', boxShadow: SEG_ACTIVE_SHADOW }
+    : { color: TEXT_DIM };
 }
 
 // Compact timeframe selector, same visual language as the band control.
 function TimeframeControl({ timeframe, onChange }: { timeframe: Timeframe; onChange: (t: Timeframe) => void }) {
   return (
-    <div className="flex items-center gap-0.5" role="group" aria-label="Timeframe">
+    <div
+      className="inline-flex items-center gap-0.5 rounded-full p-0.5"
+      role="group"
+      aria-label="Timeframe"
+      style={{ background: SEG_BG, boxShadow: SEG_SHADOW }}
+    >
       {TIMEFRAMES.map((tf) => (
         <button
           key={tf}
           onClick={() => onChange(tf)}
           aria-pressed={timeframe === tf}
-          className={`rounded px-1 py-0.5 font-mono text-[10px] leading-4 ${
-            timeframe === tf ? 'bg-surface-2 text-gray-300' : 'text-gray-600'
-          }`}
+          className="rounded-full px-1.5 py-0.5 font-mono text-[10px] leading-4"
+          style={segStyle(timeframe === tf)}
         >
           {tf}
         </button>
@@ -206,20 +389,27 @@ function TimeframeControl({ timeframe, onChange }: { timeframe: Timeframe; onCha
 // option carries a small dot so returning to it is the reset affordance.
 function BandControl({ band, onChange }: { band: number; onChange: (b: number) => void }) {
   return (
-    <div className="flex items-center gap-0.5" role="group" aria-label="Chart scale, percent band">
+    <div
+      className="inline-flex items-center gap-0.5 rounded-full p-0.5"
+      role="group"
+      aria-label="Chart scale, percent band"
+      style={{ background: SEG_BG, boxShadow: SEG_SHADOW }}
+    >
       {BAND_OPTIONS.map((b) => (
         <button
           key={b}
           onClick={() => onChange(b)}
           aria-pressed={band === b}
           title={b === BAND ? `Scale -${b}% to +${b}% (default)` : `Scale -${b}% to +${b}%`}
-          className={`flex flex-col items-center rounded px-1.5 pt-0.5 pb-1 font-mono text-[10px] leading-4 ${
-            band === b ? 'bg-surface-2 text-gray-300' : 'text-gray-600'
-          }`}
+          className="flex flex-col items-center rounded-full px-1.5 pt-0.5 pb-1 font-mono text-[10px] leading-4"
+          style={segStyle(band === b)}
         >
           <span>{b}%</span>
           <span
-            className={`h-0.5 w-0.5 rounded-full ${b === BAND ? 'bg-gray-500' : 'bg-transparent'}`}
+            className="h-0.5 w-0.5 rounded-full"
+            style={{
+              background: b === BAND ? (band === b ? 'rgba(255,255,255,0.85)' : STONE) : 'transparent',
+            }}
           />
         </button>
       ))}
@@ -268,37 +458,51 @@ function EditList({ displayList, rowsBySymbol, onChange }: EditListProps) {
 
   return (
     <div>
-      {displayList.map((symbol, i) => (
-        <div
-          key={symbol}
-          data-row-idx={i}
-          className={`flex items-center gap-3 py-2.5 border-b border-surface-2 last:border-b-0 ${
-            dragIdx === i ? 'bg-surface-2' : ''
-          }`}
-        >
-          <span
-            className="touch-none cursor-grab select-none px-1 text-gray-500"
-            onPointerDown={startDrag(i)}
-            onPointerMove={moveDrag}
-            onPointerUp={endDrag}
-            onPointerCancel={endDrag}
-            aria-label={`Reorder ${symbol}`}
+      {displayList.map((symbol, i) => {
+        const dragging = dragIdx === i;
+        return (
+          <div
+            key={symbol}
+            data-row-idx={i}
+            className="flex items-center gap-3 mb-2 px-3 py-2.5"
+            style={{
+              ...cardStyle(
+                dragging
+                  ? '0 6px 16px rgba(58,68,48,0.18), 0 16px 32px -10px rgba(58,68,48,0.22), inset 0 1px 0 rgba(255,255,255,0.9)'
+                  : CARD_SHADOW,
+              ),
+              // Dragged card lifts slightly above the list.
+              transform: dragging ? 'scale(1.02)' : undefined,
+              position: 'relative',
+              zIndex: dragging ? 1 : undefined,
+            }}
           >
-            &#8801;
-          </span>
-          <div className="flex-1 min-w-0">
-            <div className="font-mono text-sm text-gray-300">{symbol}</div>
-            <div className="text-xs text-gray-500 truncate">{rowsBySymbol[symbol]?.name ?? ''}</div>
+            <span
+              className="touch-none cursor-grab select-none px-1"
+              style={{ color: STONE }}
+              onPointerDown={startDrag(i)}
+              onPointerMove={moveDrag}
+              onPointerUp={endDrag}
+              onPointerCancel={endDrag}
+              aria-label={`Reorder ${symbol}`}
+            >
+              &#8801;
+            </span>
+            <div className="flex-1 min-w-0">
+              <div className="font-mono text-sm font-semibold" style={{ color: TEXT }}>{symbol}</div>
+              <div className="text-xs truncate" style={{ color: TEXT_DIM }}>{rowsBySymbol[symbol]?.name ?? ''}</div>
+            </div>
+            <button
+              className="px-2 py-1 text-base"
+              style={{ color: LOSS_TEXT }}
+              onClick={() => onChange(displayList.filter((s) => s !== symbol))}
+              aria-label={`Remove ${symbol}`}
+            >
+              &times;
+            </button>
           </div>
-          <button
-            className="px-2 py-1 text-gray-500 hover:text-gray-300"
-            onClick={() => onChange(displayList.filter((s) => s !== symbol))}
-            aria-label={`Remove ${symbol}`}
-          >
-            &times;
-          </button>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -318,6 +522,7 @@ export default function TickersPage() {
   const [addValue, setAddValue] = useState('');
   const [addBusy, setAddBusy] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<string | null>(null);
 
   const updateBand = useCallback((next: number) => {
     setBand(next);
@@ -451,7 +656,7 @@ export default function TickersPage() {
         : Date.now() / 1000 - firstOk.asOf! > 15 * 60
       : false;
     headerLabel = isClosed
-      ? `Closed, showing ${new Date(firstOk!.asOf! * 1000).toLocaleDateString('en-US', {
+      ? `Closed · showing ${new Date(firstOk!.asOf! * 1000).toLocaleDateString('en-US', {
           weekday: 'short',
           month: 'short',
           day: 'numeric',
@@ -459,13 +664,44 @@ export default function TickersPage() {
       : null;
   }
 
+  const toggleExpanded = useCallback((symbol: string) => {
+    setExpanded((cur) => (cur === symbol ? null : symbol));
+  }, []);
+
+  const renderRow = (s: string) => (
+    <Row
+      key={s}
+      symbol={s}
+      timeframe={timeframe}
+      band={band}
+      colorScale={colorScale}
+      row={rowsBySymbol[s] ?? (loadedOnce ? { symbol: s, ok: false } : undefined)}
+      expanded={expanded === s}
+      onToggle={() => toggleExpanded(s)}
+    />
+  );
+
   return (
-    <div className="min-h-screen bg-surface-0 px-4 py-6">
+    <div
+      className="min-h-screen px-4 py-6"
+      style={{ backgroundColor: PAGE_BG, backgroundImage: PAGE_GRADIENT, color: TEXT }}
+    >
+      {/* Placeholder color cannot be set inline; tiny route-scoped stylesheet. */}
+      <style>{`.tickers-add::placeholder { color: ${STONE}; }`}</style>
       <div className="mx-auto w-full max-w-md">
-        <div className="flex items-center justify-between mb-1">
-          <h1 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Tickers</h1>
+        <div className="flex items-center justify-between mb-3">
+          <h1 style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 26, lineHeight: 1.2, color: TEXT }}>
+            <span aria-hidden="true" style={{ color: ACCENT, fontSize: 20, marginRight: 8 }}>{'❧'}</span>
+            Tickers
+          </h1>
           <button
-            className="text-xs text-accent"
+            className="rounded-full text-xs font-medium"
+            style={{
+              background: ACCENT_BG,
+              color: ACCENT,
+              padding: '5px 15px',
+              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7), 0 1px 3px rgba(58,68,48,0.1)',
+            }}
             onClick={() => {
               setEditMode((v) => !v);
               setAddError(null);
@@ -474,14 +710,18 @@ export default function TickersPage() {
             {editMode ? 'Done' : 'Edit'}
           </button>
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-y-1 mb-1">
+        <div className="flex flex-wrap items-center justify-between gap-y-1.5 mb-2">
           <TimeframeControl timeframe={timeframe} onChange={setTimeframe} />
           {/* The band only applies to the fixed-scale 1D view. */}
           {is1D && <BandControl band={band} onChange={updateBand} />}
         </div>
-        {!editMode && headerLabel && <div className="text-xs text-gray-500 mb-2">{headerLabel}</div>}
+        {!editMode && headerLabel && (
+          <div className="text-xs italic mb-3 px-1" style={{ color: TEXT_DIM }}>{headerLabel}</div>
+        )}
         {!editMode && error && !loadedOnce && (
-          <div className="text-sm text-gray-500 py-6">Could not load prices ({error}). Reopen to retry.</div>
+          <div className="text-sm italic py-6" style={{ color: LOSS_TEXT }}>
+            Could not load prices ({error}). Reopen to retry.
+          </div>
         )}
 
         {editMode ? (
@@ -501,43 +741,35 @@ export default function TickersPage() {
                 autoCapitalize="characters"
                 autoCorrect="off"
                 spellCheck={false}
-                className="flex-1 min-w-0 rounded bg-surface-2 px-3 py-1.5 text-sm font-mono text-gray-300 placeholder:text-gray-600 outline-none"
+                className="tickers-add flex-1 min-w-0 rounded-full px-4 py-1.5 text-sm font-mono outline-none"
+                style={{
+                  background: CARD_BG,
+                  border: `1px solid ${CARD_BORDER}`,
+                  color: TEXT,
+                  boxShadow: 'inset 0 1px 3px rgba(58,68,48,0.06)',
+                }}
               />
               <button
-                className="rounded bg-surface-3 px-3 py-1.5 text-sm text-gray-300 disabled:opacity-50"
+                className="rounded-full px-4 py-1.5 text-sm font-medium disabled:opacity-50"
+                style={{ background: SEG_ACTIVE_BG, color: '#ffffff', boxShadow: SEG_ACTIVE_SHADOW }}
                 onClick={addSymbol}
                 disabled={addBusy || !addValue.trim()}
               >
                 {addBusy ? 'Checking...' : 'Add'}
               </button>
             </div>
-            {addError && <div className="text-xs mb-2" style={{ color: '#b08a86' }}>{addError}</div>}
+            {addError && <div className="text-xs mb-2 px-1" style={{ color: LOSS_TEXT }}>{addError}</div>}
             <EditList displayList={displayList} rowsBySymbol={rowsBySymbol} onChange={updateWatchlist} />
           </div>
         ) : (
           <div>
-            {indexes.map((s) => (
-              <Row
-                key={s}
-                symbol={s}
-                timeframe={timeframe}
-                band={band}
-                colorScale={colorScale}
-                row={rowsBySymbol[s] ?? (loadedOnce ? { symbol: s, ok: false } : undefined)}
-              />
-            ))}
-            {indexes.length > 0 && others.length > 0 && <div className="my-2 border-t border-surface-3" />}
-            {others.map((s) => (
-              <Row
-                key={s}
-                symbol={s}
-                timeframe={timeframe}
-                band={band}
-                colorScale={colorScale}
-                row={rowsBySymbol[s] ?? (loadedOnce ? { symbol: s, ok: false } : undefined)}
-              />
-            ))}
-            {!loadedOnce && <div className="text-xs text-gray-600 mt-3">Loading prices...</div>}
+            {indexes.length > 0 && <SectionLabel>Indexes</SectionLabel>}
+            {indexes.map(renderRow)}
+            {others.length > 0 && <SectionLabel>Watchlist</SectionLabel>}
+            {others.map(renderRow)}
+            {!loadedOnce && (
+              <div className="text-xs italic mt-3 px-1" style={{ color: TEXT_DIM }}>Loading prices...</div>
+            )}
           </div>
         )}
       </div>

@@ -8,9 +8,10 @@ import { writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
-const BG = [0x10, 0x13, 0x1a];
-const ZERO = [0x39, 0x41, 0x4f];
-const LINE = [0x7c, 0xa9, 0x8f];
+// Biophilic palette: pale sage ground, stone zero line, fern sparkline.
+const BG = [0xee, 0xf0, 0xe4];
+const ZERO = [0xd5, 0xdc, 0xc0];
+const LINE = [0x5f, 0x7d, 0x4f];
 
 // Design coordinates in a 512 space, scaled per output size. Full bleed
 // background (Android masks the shape), artwork inside the maskable safe zone.
