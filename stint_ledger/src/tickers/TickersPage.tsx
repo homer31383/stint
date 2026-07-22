@@ -35,6 +35,35 @@ function loadBand(): number {
   return BAND;
 }
 
+// Keys are sent to /api/tickers as ?range= and mapped to Yahoo ranges there.
+const TIMEFRAMES = ['1D', '1W', '1M', '6M', 'YTD', '1Y', '5Y', 'All'] as const;
+type Timeframe = (typeof TIMEFRAMES)[number];
+
+const PERIOD_LABELS: Record<Timeframe, string | null> = {
+  '1D': null, // 1D uses the market open/closed label instead
+  '1W': 'Past week',
+  '1M': 'Past month',
+  '6M': 'Past 6 months',
+  YTD: 'Year to date',
+  '1Y': 'Past year',
+  '5Y': 'Past 5 years',
+  All: 'All time',
+};
+
+// Change over the selected timeframe. On 1D the reference is the previous
+// close; on longer ranges it is the first close in the period, so the
+// percent change is (last - first) / first.
+function changeFor(row: TickerRow, is1D: boolean): { pct: number; series: number[] } | null {
+  if (!row.ok || row.price == null) return null;
+  const closes = row.closes ?? [];
+  const ref = is1D ? row.prevClose : closes.length > 0 ? closes[0] : null;
+  if (ref == null || ref <= 0) return null;
+  return {
+    pct: ((row.price - ref) / ref) * 100,
+    series: closes.map((c) => ((c - ref) / ref) * 100),
+  };
+}
+
 interface TickerRow {
   symbol: string;
   ok: boolean;
@@ -91,12 +120,25 @@ function fmtPrice(v: number): string {
 }
 
 function fmtPct(v: number): string {
-  return `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
+  // Long timeframes can run past 100%; drop the decimals there to keep the
+  // number compact.
+  return `${v >= 0 ? '+' : ''}${v.toFixed(Math.abs(v) >= 100 ? 0 : 2)}%`;
 }
 
-function Row({ symbol, row, band }: { symbol: string; row: TickerRow | undefined; band: number }) {
-  // row undefined means still loading, row.ok false means that symbol failed.
-  if (!row || !row.ok || row.price == null || row.prevClose == null) {
+interface RowProps {
+  symbol: string;
+  row: TickerRow | undefined;
+  timeframe: Timeframe;
+  band: number;
+  colorScale: number; // color denominator: band on 1D, biggest mover otherwise
+}
+
+function Row({ symbol, row, timeframe, band, colorScale }: RowProps) {
+  const is1D = timeframe === '1D';
+  const change = row ? changeFor(row, is1D) : null;
+
+  // row undefined means still loading, no usable change means that symbol failed.
+  if (!row || !change) {
     return (
       <div className="flex items-center gap-3 py-3 border-b border-surface-2 last:border-b-0">
         <div className="flex-1 min-w-0">
@@ -106,18 +148,17 @@ function Row({ symbol, row, band }: { symbol: string; row: TickerRow | undefined
         <div className="text-right shrink-0">
           <div className="text-sm text-gray-500">{row ? 'Unavailable' : '...'}</div>
         </div>
-        <TickerSparkline series={[]} changePct={0} band={band} />
+        <TickerSparkline series={[]} changePct={0} mode={is1D ? 'band' : 'auto'} band={band} colorScale={colorScale} />
       </div>
     );
   }
 
-  const pct = ((row.price - row.prevClose) / row.prevClose) * 100;
-  const series = (row.closes ?? []).map((c) => ((c - row.prevClose!) / row.prevClose!) * 100);
+  const { pct, series } = change;
 
   return (
     <div
       className="flex items-center gap-3 py-3 border-b border-surface-2 last:border-b-0"
-      style={{ backgroundColor: intensityTint(pct, band) }}
+      style={{ backgroundColor: intensityTint(pct, colorScale) }}
     >
       <div className="flex-1 min-w-0">
         <div className="font-mono text-sm text-gray-300">{row.symbol}</div>
@@ -125,12 +166,38 @@ function Row({ symbol, row, band }: { symbol: string; row: TickerRow | undefined
       </div>
       <div className="text-right shrink-0">
         {/* Percent change is the primary number, price is secondary. */}
-        <div className="font-mono text-xl font-semibold" style={{ color: intensityColor(pct, band) }}>
+        <div className="font-mono text-xl font-semibold" style={{ color: intensityColor(pct, colorScale) }}>
           {fmtPct(pct)}
         </div>
-        <div className="font-mono text-xs text-gray-500">{fmtPrice(row.price)}</div>
+        <div className="font-mono text-xs text-gray-500">{fmtPrice(row.price!)}</div>
       </div>
-      <TickerSparkline series={series} changePct={pct} band={band} />
+      <TickerSparkline
+        series={series}
+        changePct={pct}
+        mode={is1D ? 'band' : 'auto'}
+        band={band}
+        colorScale={colorScale}
+      />
+    </div>
+  );
+}
+
+// Compact timeframe selector, same visual language as the band control.
+function TimeframeControl({ timeframe, onChange }: { timeframe: Timeframe; onChange: (t: Timeframe) => void }) {
+  return (
+    <div className="flex items-center gap-0.5" role="group" aria-label="Timeframe">
+      {TIMEFRAMES.map((tf) => (
+        <button
+          key={tf}
+          onClick={() => onChange(tf)}
+          aria-pressed={timeframe === tf}
+          className={`rounded px-1 py-0.5 font-mono text-[10px] leading-4 ${
+            timeframe === tf ? 'bg-surface-2 text-gray-300' : 'text-gray-600'
+          }`}
+        >
+          {tf}
+        </button>
+      ))}
     </div>
   );
 }
@@ -241,6 +308,9 @@ export default function TickersPage() {
 
   const [watchlist, setWatchlist] = useState<string[]>(loadWatchlist);
   const [band, setBand] = useState<number>(loadBand);
+  // Deliberately not persisted: the app always opens on today (1D); other
+  // timeframes are temporary excursions within a session.
+  const [timeframe, setTimeframe] = useState<Timeframe>('1D');
   const [rowsBySymbol, setRowsBySymbol] = useState<Record<string, TickerRow>>({});
   const [loadedOnce, setLoadedOnce] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -267,10 +337,12 @@ export default function TickersPage() {
     }
   }, []);
 
-  const load = useCallback(async (symbols: string[]) => {
+  const load = useCallback(async (symbols: string[], tf: Timeframe) => {
     if (symbols.length === 0) return;
     try {
-      const res = await fetch(`/api/tickers?symbols=${encodeURIComponent(symbols.join(','))}`);
+      const res = await fetch(
+        `/api/tickers?symbols=${encodeURIComponent(symbols.join(','))}&range=${encodeURIComponent(tf)}`,
+      );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
       if (!Array.isArray(json?.tickers)) throw new Error('unexpected response shape');
@@ -288,15 +360,26 @@ export default function TickersPage() {
     }
   }, []);
 
-  // Refetch on mount and on refocus with whatever the list is at that
-  // moment. The serverless function caches for 60s, so repeated refocusing
-  // does not hammer Yahoo. Reordering and removing never refetch.
   const watchlistRef = useRef(watchlist);
   watchlistRef.current = watchlist;
+  const timeframeRef = useRef(timeframe);
+  timeframeRef.current = timeframe;
+
+  // One fetch per timeframe: this effect runs on mount and again on every
+  // switch. Old rows are cleared because their series and reference belong
+  // to the previous range. Server and CDN caches make repeat switches cheap.
   useEffect(() => {
-    load(watchlistRef.current);
+    setRowsBySymbol({});
+    setLoadedOnce(false);
+    load(watchlistRef.current, timeframe);
+  }, [timeframe, load]);
+
+  // Refetch on refocus with whatever the list and timeframe are at that
+  // moment. The serverless function caches for 60s, so repeated refocusing
+  // does not hammer Yahoo. Reordering and removing never refetch.
+  useEffect(() => {
     const onVisible = () => {
-      if (document.visibilityState === 'visible') load(watchlistRef.current);
+      if (document.visibilityState === 'visible') load(watchlistRef.current, timeframeRef.current);
     };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
@@ -312,8 +395,11 @@ export default function TickersPage() {
     setAddBusy(true);
     setAddError(null);
     try {
-      // Validate by fetching it: if Yahoo has no data, it is not addable.
-      const res = await fetch(`/api/tickers?symbols=${encodeURIComponent(sym)}`);
+      // Validate by fetching it at the current timeframe: if Yahoo has no
+      // data, it is not addable, and on success the row matches the view.
+      const res = await fetch(
+        `/api/tickers?symbols=${encodeURIComponent(sym)}&range=${encodeURIComponent(timeframe)}`,
+      );
       const json = res.ok ? await res.json() : null;
       const row: TickerRow | undefined = Array.isArray(json?.tickers)
         ? json.tickers.find((t: TickerRow) => t.symbol === sym)
@@ -330,48 +416,70 @@ export default function TickersPage() {
     } finally {
       setAddBusy(false);
     }
-  }, [addValue, addBusy, watchlist, updateWatchlist]);
+  }, [addValue, addBusy, watchlist, updateWatchlist, timeframe]);
 
   const displayList = grouped(watchlist);
   const indexes = displayList.filter(isIndexSymbol);
   const others = displayList.filter((s) => !isIndexSymbol(s));
+  const is1D = timeframe === '1D';
 
-  // One session label for the equity rows, taken from the first index. See
-  // the comment below on the staleness fallback; weekends and holidays fall
-  // out of it naturally because the last trade is the prior session's close.
-  const firstOk = displayList.map((s) => rowsBySymbol[s]).find((r) => r?.ok && r.asOf != null);
-  const isClosed = firstOk
-    ? firstOk.marketState
-      ? firstOk.marketState !== 'REGULAR'
-      : Date.now() / 1000 - firstOk.asOf! > 15 * 60
-    : false;
-  const closedLabel = isClosed
-    ? `Closed, showing ${new Date(firstOk!.asOf! * 1000).toLocaleDateString('en-US', {
-        weekday: 'short',
-        month: 'short',
-        day: 'numeric',
-      })}`
-    : null;
+  // Color denominator: the band on 1D; on longer timeframes the list's
+  // biggest absolute mover, so the most saturated colors always mark the
+  // biggest movers and cross-ticker comparison stays meaningful.
+  let colorScale = band;
+  if (!is1D) {
+    let maxAbs = 0;
+    for (const s of displayList) {
+      const r = rowsBySymbol[s];
+      const c = r ? changeFor(r, false) : null;
+      if (c) maxAbs = Math.max(maxAbs, Math.abs(c.pct));
+    }
+    colorScale = Math.max(maxAbs, 0.01);
+  }
+
+  // Header label. On 1D: one session label for the equity rows, taken from
+  // the first index; Yahoo's chart meta usually omits marketState, so when
+  // it is missing we treat the market as closed once the last trade (asOf)
+  // is more than 15 minutes old, and weekends and holidays fall out of that
+  // naturally. On longer timeframes: the period name.
+  let headerLabel: string | null = PERIOD_LABELS[timeframe];
+  if (is1D) {
+    const firstOk = displayList.map((s) => rowsBySymbol[s]).find((r) => r?.ok && r.asOf != null);
+    const isClosed = firstOk
+      ? firstOk.marketState
+        ? firstOk.marketState !== 'REGULAR'
+        : Date.now() / 1000 - firstOk.asOf! > 15 * 60
+      : false;
+    headerLabel = isClosed
+      ? `Closed, showing ${new Date(firstOk!.asOf! * 1000).toLocaleDateString('en-US', {
+          weekday: 'short',
+          month: 'short',
+          day: 'numeric',
+        })}`
+      : null;
+  }
 
   return (
     <div className="min-h-screen bg-surface-0 px-4 py-6">
       <div className="mx-auto w-full max-w-md">
         <div className="flex items-center justify-between mb-1">
           <h1 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Tickers</h1>
-          <div className="flex items-center gap-3">
-            <BandControl band={band} onChange={updateBand} />
-            <button
-              className="text-xs text-accent"
-              onClick={() => {
-                setEditMode((v) => !v);
-                setAddError(null);
-              }}
-            >
-              {editMode ? 'Done' : 'Edit'}
-            </button>
-          </div>
+          <button
+            className="text-xs text-accent"
+            onClick={() => {
+              setEditMode((v) => !v);
+              setAddError(null);
+            }}
+          >
+            {editMode ? 'Done' : 'Edit'}
+          </button>
         </div>
-        {!editMode && closedLabel && <div className="text-xs text-gray-500 mb-2">{closedLabel}</div>}
+        <div className="flex flex-wrap items-center justify-between gap-y-1 mb-1">
+          <TimeframeControl timeframe={timeframe} onChange={setTimeframe} />
+          {/* The band only applies to the fixed-scale 1D view. */}
+          {is1D && <BandControl band={band} onChange={updateBand} />}
+        </div>
+        {!editMode && headerLabel && <div className="text-xs text-gray-500 mb-2">{headerLabel}</div>}
         {!editMode && error && !loadedOnce && (
           <div className="text-sm text-gray-500 py-6">Could not load prices ({error}). Reopen to retry.</div>
         )}
@@ -409,11 +517,25 @@ export default function TickersPage() {
         ) : (
           <div>
             {indexes.map((s) => (
-              <Row key={s} symbol={s} band={band} row={rowsBySymbol[s] ?? (loadedOnce ? { symbol: s, ok: false } : undefined)} />
+              <Row
+                key={s}
+                symbol={s}
+                timeframe={timeframe}
+                band={band}
+                colorScale={colorScale}
+                row={rowsBySymbol[s] ?? (loadedOnce ? { symbol: s, ok: false } : undefined)}
+              />
             ))}
             {indexes.length > 0 && others.length > 0 && <div className="my-2 border-t border-surface-3" />}
             {others.map((s) => (
-              <Row key={s} symbol={s} band={band} row={rowsBySymbol[s] ?? (loadedOnce ? { symbol: s, ok: false } : undefined)} />
+              <Row
+                key={s}
+                symbol={s}
+                timeframe={timeframe}
+                band={band}
+                colorScale={colorScale}
+                row={rowsBySymbol[s] ?? (loadedOnce ? { symbol: s, ok: false } : undefined)}
+              />
             ))}
             {!loadedOnce && <div className="text-xs text-gray-600 mt-3">Loading prices...</div>}
           </div>

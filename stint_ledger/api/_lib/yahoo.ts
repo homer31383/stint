@@ -22,6 +22,26 @@ const YAHOO_BASE = 'https://query1.finance.yahoo.com/v8/finance/chart/';
 const SYMBOL_RE = /^[A-Z0-9^.\-=]{1,14}$/i;
 const MAX_SYMBOLS = 60;
 
+// Timeframe keys map to Yahoo chart ranges. Keys are what the client sends
+// as ?range=; anything unknown falls back to 1D.
+export const RANGES = {
+  '1D': { range: '1d', interval: '5m' },
+  '1W': { range: '5d', interval: '30m' },
+  '1M': { range: '1mo', interval: '1d' },
+  '6M': { range: '6mo', interval: '1d' },
+  YTD: { range: 'ytd', interval: '1d' },
+  '1Y': { range: '1y', interval: '1d' },
+  '5Y': { range: '5y', interval: '1wk' },
+  ALL: { range: 'max', interval: '1mo' },
+} as const;
+
+export type RangeKey = keyof typeof RANGES;
+
+export function parseRange(raw: string | null): RangeKey {
+  const key = (raw ?? '1D').trim().toUpperCase();
+  return (key in RANGES ? key : '1D') as RangeKey;
+}
+
 export function parseSymbols(raw: string | null): string[] {
   if (!raw) return [];
   const seen = new Set<string>();
@@ -37,9 +57,10 @@ function num(v: unknown): number | null {
   return typeof v === 'number' && Number.isFinite(v) ? v : null;
 }
 
-async function fetchOne(symbol: string): Promise<TickerRow> {
+async function fetchOne(symbol: string, rangeKey: RangeKey): Promise<TickerRow> {
   try {
-    const url = `${YAHOO_BASE}${encodeURIComponent(symbol)}?range=1d&interval=5m`;
+    const { range, interval } = RANGES[rangeKey];
+    const url = `${YAHOO_BASE}${encodeURIComponent(symbol)}?range=${range}&interval=${interval}`;
     const res = await fetch(url, {
       // Yahoo rejects requests with no browser-like user agent from cloud IPs.
       headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
@@ -81,6 +102,6 @@ async function fetchOne(symbol: string): Promise<TickerRow> {
 
 // All symbols in parallel. A failed symbol becomes an error row, it never
 // rejects the whole batch.
-export function fetchTickers(symbols: string[]): Promise<TickerRow[]> {
-  return Promise.all(symbols.map(fetchOne));
+export function fetchTickers(symbols: string[], rangeKey: RangeKey = '1D'): Promise<TickerRow[]> {
+  return Promise.all(symbols.map((s) => fetchOne(s, rangeKey)));
 }

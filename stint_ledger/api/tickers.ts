@@ -6,7 +6,7 @@
 // req/res are typed loosely on purpose: this file sits outside tsconfig's
 // include (src only) and we avoid adding @vercel/node just for two types.
 
-import { fetchTickers, parseSymbols } from './_lib/yahoo.js';
+import { fetchTickers, parseSymbols, parseRange } from './_lib/yahoo.js';
 
 const CACHE_TTL_MS = 60_000;
 
@@ -25,13 +25,14 @@ export default async function handler(req: any, res: any) {
     return;
   }
 
-  const key = symbols.join(',');
+  const range = parseRange(url.searchParams.get('range'));
+  const key = `${range}|${symbols.join(',')}`;
   const hit = cache.get(key);
   let body: string;
   if (hit && Date.now() - hit.at < CACHE_TTL_MS) {
     body = hit.body;
   } else {
-    const tickers = await fetchTickers(symbols);
+    const tickers = await fetchTickers(symbols, range);
     body = JSON.stringify({ tickers });
     cache.set(key, { at: Date.now(), body });
   }

@@ -1,7 +1,7 @@
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
-import { fetchTickers, parseSymbols } from './api/_lib/yahoo';
+import { fetchTickers, parseSymbols, parseRange } from './api/_lib/yahoo';
 
 // Dev stand-in for the Vercel function in api/tickers.ts. A plain
 // server.proxy entry cannot fan one /api/tickers request out to several
@@ -20,7 +20,7 @@ function tickersDevApi(): Plugin {
           res.end(JSON.stringify({ error: 'symbols query param required, comma separated' }));
           return;
         }
-        fetchTickers(symbols)
+        fetchTickers(symbols, parseRange(url.searchParams.get('range')))
           .then((tickers) => {
             res.statusCode = 200;
             res.end(JSON.stringify({ tickers }));
