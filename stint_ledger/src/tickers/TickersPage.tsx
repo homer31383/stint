@@ -195,14 +195,60 @@ function Pill({ pct, scale, pinned }: { pct: number; scale: number; pinned: bool
   );
 }
 
+// Tiny stone-pill utility: opens a Google News search for the asset in a
+// new tab. Searches by display name because raw symbols like ^GSPC or BZ=F
+// return poor results. Click and Enter both stop propagating so the button
+// never toggles the row's tap-to-expand.
+function NewsLink({ name, symbol }: { name?: string; symbol: string }) {
+  const query = name?.trim() || symbol;
+  return (
+    <a
+      href={`https://news.google.com/search?q=${encodeURIComponent(query)}`}
+      target="_blank"
+      rel="noopener noreferrer"
+      aria-label={`News for ${query}`}
+      title={`News for ${query}`}
+      onClick={(e) => e.stopPropagation()}
+      onKeyDown={(e) => e.stopPropagation()}
+      className="inline-flex items-center justify-center rounded-full shrink-0 select-none"
+      style={{
+        width: 16,
+        height: 16,
+        background: 'linear-gradient(180deg, #f0f0e8, #e2e2d6)',
+        boxShadow: 'inset 0 1px 2px rgba(90,92,78,0.15), 0 1px 0 rgba(255,255,255,0.6)',
+        color: TEXT_DIM,
+        fontFamily: SERIF,
+        fontSize: 10,
+        fontWeight: 600,
+        lineHeight: 1,
+      }}
+    >
+      G
+    </a>
+  );
+}
+
 // Name-first hierarchy: the company or fund name is the primary line, the
 // ticker symbol the secondary one. Rows with no name yet (still loading, or
-// symbols Yahoo returns nameless) promote the symbol to the top line.
-function RowTitle({ name, symbol }: { name?: string; symbol: string }) {
+// symbols Yahoo returns nameless) promote the symbol to the top line. The
+// news button rides the symbol line in view rows; edit rows omit it.
+function RowTitle({ name, symbol, news = false }: { name?: string; symbol: string; news?: boolean }) {
+  const newsLink = news ? <NewsLink name={name} symbol={symbol} /> : null;
+  if (!name) {
+    return (
+      <div className="flex-1 min-w-0 flex items-center gap-1.5">
+        <span className="text-sm font-semibold truncate" style={{ color: TEXT }}>{symbol}</span>
+        {newsLink}
+      </div>
+    );
+  }
   return (
     <div className="flex-1 min-w-0">
-      <div className="text-sm font-semibold truncate" style={{ color: TEXT }}>{name || symbol}</div>
-      {name && <div className="font-mono text-xs" style={{ color: TEXT_DIM }}>{symbol}</div>}
+      <div className="text-sm font-semibold truncate" style={{ color: TEXT }}>{name}</div>
+      <div className="flex items-center gap-1.5">
+        <span className="font-mono text-xs" style={{ color: TEXT_DIM }}>{symbol}</span>
+        {newsLink}
+      </div>
     </div>
   );
 }
@@ -310,7 +356,7 @@ function Row({ symbol, row, timeframe, band, colorScale, expanded, onToggle }: R
   if (!row || !change) {
     return (
       <div className="flex items-center gap-3 mb-2.5 px-3.5 py-3" style={{ ...cardStyle(), minHeight: 72 }}>
-        <RowTitle name={row?.name} symbol={symbol} />
+        <RowTitle name={row?.name} symbol={symbol} news />
         <div className="text-right shrink-0 text-sm italic" style={{ color: row ? LOSS_TEXT : TEXT_DIM }}>
           {row ? 'Unavailable' : '...'}
         </div>
@@ -340,7 +386,7 @@ function Row({ symbol, row, timeframe, band, colorScale, expanded, onToggle }: R
       }}
     >
       <div className="flex items-center gap-3" style={{ minHeight: 48 }}>
-        <RowTitle name={row.name} symbol={row.symbol} />
+        <RowTitle name={row.name} symbol={row.symbol} news />
         <div className="shrink-0 flex flex-col items-end gap-0.5">
           {/* Percent change is the primary number, price is secondary. */}
           <Pill pct={pct} scale={colorScale} pinned={pinned} />
