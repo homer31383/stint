@@ -195,6 +195,18 @@ function Pill({ pct, scale, pinned }: { pct: number; scale: number; pinned: bool
   );
 }
 
+// Name-first hierarchy: the company or fund name is the primary line, the
+// ticker symbol the secondary one. Rows with no name yet (still loading, or
+// symbols Yahoo returns nameless) promote the symbol to the top line.
+function RowTitle({ name, symbol }: { name?: string; symbol: string }) {
+  return (
+    <div className="flex-1 min-w-0">
+      <div className="text-sm font-semibold truncate" style={{ color: TEXT }}>{name || symbol}</div>
+      {name && <div className="font-mono text-xs" style={{ color: TEXT_DIM }}>{symbol}</div>}
+    </div>
+  );
+}
+
 function SectionLabel({ children }: { children: string }) {
   return (
     <div
@@ -298,10 +310,7 @@ function Row({ symbol, row, timeframe, band, colorScale, expanded, onToggle }: R
   if (!row || !change) {
     return (
       <div className="flex items-center gap-3 mb-2.5 px-3.5 py-3" style={{ ...cardStyle(), minHeight: 72 }}>
-        <div className="flex-1 min-w-0">
-          <div className="font-mono text-sm font-semibold" style={{ color: TEXT }}>{symbol}</div>
-          <div className="text-xs truncate" style={{ color: TEXT_DIM }}>{row?.name ?? ''}</div>
-        </div>
+        <RowTitle name={row?.name} symbol={symbol} />
         <div className="text-right shrink-0 text-sm italic" style={{ color: row ? LOSS_TEXT : TEXT_DIM }}>
           {row ? 'Unavailable' : '...'}
         </div>
@@ -331,10 +340,7 @@ function Row({ symbol, row, timeframe, band, colorScale, expanded, onToggle }: R
       }}
     >
       <div className="flex items-center gap-3" style={{ minHeight: 48 }}>
-        <div className="flex-1 min-w-0">
-          <div className="font-mono text-sm font-semibold" style={{ color: TEXT }}>{row.symbol}</div>
-          <div className="text-xs truncate" style={{ color: TEXT_DIM }}>{row.name ?? ''}</div>
-        </div>
+        <RowTitle name={row.name} symbol={row.symbol} />
         <div className="shrink-0 flex flex-col items-end gap-0.5">
           {/* Percent change is the primary number, price is secondary. */}
           <Pill pct={pct} scale={colorScale} pinned={pinned} />
@@ -491,10 +497,7 @@ function EditList({ displayList, rowsBySymbol, onChange }: EditListProps) {
             >
               &#8801;
             </span>
-            <div className="flex-1 min-w-0">
-              <div className="font-mono text-sm font-semibold" style={{ color: TEXT }}>{symbol}</div>
-              <div className="text-xs truncate" style={{ color: TEXT_DIM }}>{rowsBySymbol[symbol]?.name ?? ''}</div>
-            </div>
+            <RowTitle name={rowsBySymbol[symbol]?.name} symbol={symbol} />
             <button
               className="px-2 py-1 text-base"
               style={{ color: LOSS_TEXT }}
