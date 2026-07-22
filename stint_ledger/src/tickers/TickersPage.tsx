@@ -292,9 +292,12 @@ function Row({ symbol, row, timeframe, band, colorScale, expanded, onToggle }: R
   const change = row ? changeFor(row, is1D) : null;
 
   // row undefined means still loading, no usable change means that symbol failed.
+  // Loading and error cards share the data card's min height so a timeframe
+  // switch (which clears every row) re-renders in place without the list
+  // jumping under a scrolled reader.
   if (!row || !change) {
     return (
-      <div className="flex items-center gap-3 mb-2.5 px-3.5 py-3" style={cardStyle()}>
+      <div className="flex items-center gap-3 mb-2.5 px-3.5 py-3" style={{ ...cardStyle(), minHeight: 72 }}>
         <div className="flex-1 min-w-0">
           <div className="font-mono text-sm font-semibold" style={{ color: TEXT }}>{symbol}</div>
           <div className="text-xs truncate" style={{ color: TEXT_DIM }}>{row?.name ?? ''}</div>
@@ -327,7 +330,7 @@ function Row({ symbol, row, timeframe, band, colorScale, expanded, onToggle }: R
         }
       }}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3" style={{ minHeight: 48 }}>
         <div className="flex-1 min-w-0">
           <div className="font-mono text-sm font-semibold" style={{ color: TEXT }}>{row.symbol}</div>
           <div className="text-xs truncate" style={{ color: TEXT_DIM }}>{row.name ?? ''}</div>
@@ -523,6 +526,17 @@ export default function TickersPage() {
   const [addBusy, setAddBusy] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Drives the sticky header treatment: flush against the page gradient at
+  // the top, solid sage with a bottom edge (and a smaller wordmark) once the
+  // list has scrolled underneath it.
+  const [scrolled, setScrolled] = useState(false);
+
+  useEffect(() => {
+    const onScroll = () => setScrolled(window.scrollY > 4);
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   const updateBand = useCallback((next: number) => {
     setBand(next);
@@ -683,41 +697,80 @@ export default function TickersPage() {
 
   return (
     <div
-      className="min-h-screen px-4 py-6"
+      className="min-h-screen px-4 pb-6"
       style={{ backgroundColor: PAGE_BG, backgroundImage: PAGE_GRADIENT, color: TEXT }}
     >
       {/* Placeholder color cannot be set inline; tiny route-scoped stylesheet. */}
       <style>{`.tickers-add::placeholder { color: ${STONE}; }`}</style>
       <div className="mx-auto w-full max-w-md">
-        <div className="flex items-center justify-between mb-3">
-          <h1 style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 26, lineHeight: 1.2, color: TEXT }}>
-            <span aria-hidden="true" style={{ color: ACCENT, fontSize: 20, marginRight: 8 }}>{'❧'}</span>
-            Tickers
-          </h1>
-          <button
-            className="rounded-full text-xs font-medium"
-            style={{
-              background: ACCENT_BG,
-              color: ACCENT,
-              padding: '5px 15px',
-              boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7), 0 1px 3px rgba(58,68,48,0.1)',
-            }}
-            onClick={() => {
-              setEditMode((v) => !v);
-              setAddError(null);
-            }}
+        {/* Sticky header: the whole control block pins to the viewport top.
+            At rest it is transparent (flush with the page gradient); once the
+            list scrolls underneath it turns solid sage, grows a soft bottom
+            edge, and the wordmark row shrinks so the selectors stay the
+            priority on short screens. The negative margins bleed the
+            background over the page's side padding. */}
+        <div
+          className="sticky top-0 z-10 -mx-4 px-4"
+          style={{
+            paddingTop: scrolled ? 10 : 24,
+            paddingBottom: 8,
+            backgroundColor: scrolled ? '#f2f3e8' : 'transparent',
+            borderBottom: `1px solid ${scrolled ? '#dde3cb' : 'transparent'}`,
+            boxShadow: scrolled ? '0 6px 14px -10px rgba(58,68,48,0.14)' : 'none',
+            // background-color deliberately not transitioned: fading in from
+            // transparent lets rows show through the header for a beat on a
+            // fast scroll; the sage is close enough to the gradient top that
+            // an instant swap is imperceptible.
+            transition: 'padding-top 0.25s ease, border-bottom-color 0.25s ease, box-shadow 0.25s ease',
+          }}
+        >
+          <div
+            className="flex items-center justify-between"
+            style={{ marginBottom: scrolled ? 6 : 12, transition: 'margin-bottom 0.25s ease' }}
           >
-            {editMode ? 'Done' : 'Edit'}
-          </button>
+            <h1
+              style={{
+                fontFamily: SERIF,
+                fontWeight: 600,
+                fontSize: scrolled ? 18 : 26,
+                lineHeight: 1.2,
+                color: TEXT,
+                transition: 'font-size 0.25s ease',
+              }}
+            >
+              <span
+                aria-hidden="true"
+                style={{ color: ACCENT, fontSize: scrolled ? 14 : 20, marginRight: 8, transition: 'font-size 0.25s ease' }}
+              >
+                {'❧'}
+              </span>
+              Tickers
+            </h1>
+            <button
+              className="rounded-full text-xs font-medium"
+              style={{
+                background: ACCENT_BG,
+                color: ACCENT,
+                padding: '5px 15px',
+                boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.7), 0 1px 3px rgba(58,68,48,0.1)',
+              }}
+              onClick={() => {
+                setEditMode((v) => !v);
+                setAddError(null);
+              }}
+            >
+              {editMode ? 'Done' : 'Edit'}
+            </button>
+          </div>
+          <div className="flex flex-wrap items-center justify-between gap-y-1.5">
+            <TimeframeControl timeframe={timeframe} onChange={setTimeframe} />
+            {/* The band only applies to the fixed-scale 1D view. */}
+            {is1D && <BandControl band={band} onChange={updateBand} />}
+          </div>
+          {!editMode && headerLabel && (
+            <div className="text-xs italic mt-2 px-1" style={{ color: TEXT_DIM }}>{headerLabel}</div>
+          )}
         </div>
-        <div className="flex flex-wrap items-center justify-between gap-y-1.5 mb-2">
-          <TimeframeControl timeframe={timeframe} onChange={setTimeframe} />
-          {/* The band only applies to the fixed-scale 1D view. */}
-          {is1D && <BandControl band={band} onChange={updateBand} />}
-        </div>
-        {!editMode && headerLabel && (
-          <div className="text-xs italic mb-3 px-1" style={{ color: TEXT_DIM }}>{headerLabel}</div>
-        )}
         {!editMode && error && !loadedOnce && (
           <div className="text-sm italic py-6" style={{ color: LOSS_TEXT }}>
             Could not load prices ({error}). Reopen to retry.
