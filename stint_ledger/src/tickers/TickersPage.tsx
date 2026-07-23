@@ -11,6 +11,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { TickerSparkline, BAND } from './TickerSparkline';
+import InvestigatePanel, { type InvestigateAsset, type InvestigateStatus } from './InvestigatePanel';
 import {
   PAGE_BG,
   PAGE_GRADIENT,
@@ -62,6 +63,21 @@ function loadBand(): number {
 // Keys are sent to /api/tickers as ?range= and mapped to Yahoo ranges there.
 const TIMEFRAMES = ['1D', '1W', '1M', '6M', 'YTD', '1Y', '5Y', 'All'] as const;
 type Timeframe = (typeof TIMEFRAMES)[number];
+
+// Human phrases sent to /api/investigate so the analysis prompt reads
+// naturally ("+2.3% over today" is close enough; "today" keeps 1D simple).
+const TIMEFRAME_PHRASES: Record<Timeframe, string> = {
+  '1D': 'today',
+  '1W': 'the past week',
+  '1M': 'the past month',
+  '6M': 'the past 6 months',
+  YTD: 'the year to date',
+  '1Y': 'the past year',
+  '5Y': 'the past 5 years',
+  All: 'all time',
+};
+
+const MAX_INVESTIGATE = 4;
 
 const PERIOD_LABELS: Record<Timeframe, string | null> = {
   '1D': null, // 1D uses the market open/closed label instead
@@ -343,19 +359,102 @@ interface RowProps {
   colorScale: number; // color denominator: band on 1D, biggest mover otherwise
   expanded: boolean;
   onToggle: () => void;
+  selectMode: boolean;
+  selected: boolean;
+  onToggleSelect: () => void;
+  onLongPress: () => void;
 }
 
-function Row({ symbol, row, timeframe, band, colorScale, expanded, onToggle }: RowProps) {
+// Fern-tinted checkbox shown on the left of each data row in select mode.
+function SelectCheck({ checked }: { checked: boolean }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="shrink-0 inline-flex items-center justify-center rounded-full"
+      style={{
+        width: 20,
+        height: 20,
+        background: checked ? SEG_ACTIVE_BG : 'rgba(255,255,255,0.8)',
+        border: checked ? 'none' : `1.5px solid ${STONE}`,
+        boxShadow: checked ? SEG_ACTIVE_SHADOW : 'inset 0 1px 2px rgba(58,68,48,0.08)',
+        color: '#ffffff',
+        fontSize: 12,
+        lineHeight: 1,
+      }}
+    >
+      {checked ? '✓' : ''}
+    </span>
+  );
+}
+
+const LONG_PRESS_MS = 450;
+const LONG_PRESS_SLOP_PX = 10;
+
+function Row({
+  symbol,
+  row,
+  timeframe,
+  band,
+  colorScale,
+  expanded,
+  onToggle,
+  selectMode,
+  selected,
+  onToggleSelect,
+  onLongPress,
+}: RowProps) {
   const is1D = timeframe === '1D';
   const change = row ? changeFor(row, is1D) : null;
+
+  // Long-press enters select mode; a short press keeps its old meaning
+  // (expand/collapse, or toggle selection once in select mode). The fired
+  // flag swallows the click that the browser synthesizes after the press.
+  const pressTimer = useRef<number | null>(null);
+  const pressOrigin = useRef<{ x: number; y: number } | null>(null);
+  const longPressFired = useRef(false);
+
+  const clearPress = () => {
+    if (pressTimer.current != null) {
+      window.clearTimeout(pressTimer.current);
+      pressTimer.current = null;
+    }
+    pressOrigin.current = null;
+  };
+
+  const pressHandlers = {
+    onPointerDown: (e: React.PointerEvent) => {
+      if (selectMode) return;
+      longPressFired.current = false;
+      pressOrigin.current = { x: e.clientX, y: e.clientY };
+      pressTimer.current = window.setTimeout(() => {
+        pressTimer.current = null;
+        longPressFired.current = true;
+        onLongPress();
+      }, LONG_PRESS_MS);
+    },
+    onPointerMove: (e: React.PointerEvent) => {
+      const origin = pressOrigin.current;
+      if (!origin) return;
+      // A drag means the user is scrolling, not pressing.
+      if (Math.hypot(e.clientX - origin.x, e.clientY - origin.y) > LONG_PRESS_SLOP_PX) {
+        clearPress();
+      }
+    },
+    onPointerUp: clearPress,
+    onPointerCancel: clearPress,
+    onPointerLeave: clearPress,
+    // Keep mobile long-press from opening the browser context menu.
+    onContextMenu: (e: React.MouseEvent) => e.preventDefault(),
+  };
 
   // row undefined means still loading, no usable change means that symbol failed.
   // Loading and error cards share the data card's min height so a timeframe
   // switch (which clears every row) re-renders in place without the list
-  // jumping under a scrolled reader.
+  // jumping under a scrolled reader. They carry no checkbox: a row without a
+  // usable change cannot be investigated.
   if (!row || !change) {
     return (
-      <div className="flex items-center gap-3 mb-2.5 px-3.5 py-3" style={{ ...cardStyle(), minHeight: 72 }}>
+      <div className="flex items-center gap-3 mb-2.5 px-3.5 py-3" style={{ ...cardStyle(), minHeight: 72, opacity: selectMode ? 0.55 : 1 }}>
         <RowTitle name={row?.name} symbol={symbol} news />
         <div className="text-right shrink-0 text-sm italic" style={{ color: row ? LOSS_TEXT : TEXT_DIM }}>
           {row ? 'Unavailable' : '...'}
@@ -370,22 +469,45 @@ function Row({ symbol, row, timeframe, band, colorScale, expanded, onToggle }: R
   // the fixed-band 1D view; longer timeframes auto-scale and never clamp.
   const pinned = is1D && Math.abs(pct) >= band;
 
+  const activate = () => {
+    if (longPressFired.current) {
+      longPressFired.current = false;
+      return;
+    }
+    if (selectMode) onToggleSelect();
+    else onToggle();
+  };
+
   return (
     <div
       className="mb-2.5 px-3.5 py-3 cursor-pointer select-none"
-      style={cardStyle(cardShadow(pinned, pct >= 0))}
-      onClick={onToggle}
+      style={{
+        ...cardStyle(cardShadow(pinned, pct >= 0)),
+        WebkitTouchCallout: 'none',
+        // Subtle fern tint marks a selected row without shouting.
+        ...(selected
+          ? {
+              border: '1px solid rgba(95,125,79,0.55)',
+              background: '#f5f9ec',
+              boxShadow: `${CARD_SHADOW}, 0 0 0 3px rgba(95,125,79,0.12)`,
+            }
+          : {}),
+      }}
+      onClick={activate}
+      {...pressHandlers}
       role="button"
-      aria-expanded={expanded}
+      aria-expanded={selectMode ? undefined : expanded}
+      aria-pressed={selectMode ? selected : undefined}
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          onToggle();
+          activate();
         }
       }}
     >
       <div className="flex items-center gap-3" style={{ minHeight: 48 }}>
+        {selectMode && <SelectCheck checked={selected} />}
         <RowTitle name={row.name} symbol={row.symbol} news />
         <div className="shrink-0 flex flex-col items-end gap-0.5">
           {/* Percent change is the primary number, price is secondary. */}
@@ -405,7 +527,9 @@ function Row({ symbol, row, timeframe, band, colorScale, expanded, onToggle }: R
           colorScale={colorScale}
         />
       </div>
-      {expanded && <DetailPanel row={row} change={change} is1D={is1D} band={band} colorScale={colorScale} />}
+      {expanded && !selectMode && (
+        <DetailPanel row={row} change={change} is1D={is1D} band={band} colorScale={colorScale} />
+      )}
     </div>
   );
 }
@@ -575,6 +699,22 @@ export default function TickersPage() {
   const [addBusy, setAddBusy] = useState(false);
   const [addError, setAddError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<string | null>(null);
+  // Investigate: long-press select mode, the selection itself, and the
+  // results panel (which holds its own snapshot of the selected assets so
+  // the selection can clear the moment an investigation launches).
+  const [selectMode, setSelectMode] = useState(false);
+  const [selectedSymbols, setSelectedSymbols] = useState<string[]>([]);
+  const [investigation, setInvestigation] = useState<{
+    assets: InvestigateAsset[];
+    timeframe: Timeframe;
+    status: InvestigateStatus;
+    text?: string;
+    error?: string;
+  } | null>(null);
+  // Client-side guard against accidental double-taps: the Investigate and
+  // retry buttons disable for 10s after each request.
+  const [cooldown, setCooldown] = useState(false);
+  const cooldownTimer = useRef<number | null>(null);
   // Drives the sticky header treatment: flush against the page gradient at
   // the top, solid sage with a bottom edge (and a smaller wordmark) once the
   // list has scrolled underneath it.
@@ -636,9 +776,12 @@ export default function TickersPage() {
   // One fetch per timeframe: this effect runs on mount and again on every
   // switch. Old rows are cleared because their series and reference belong
   // to the previous range. Server and CDN caches make repeat switches cheap.
+  // A pending selection is cleared too: its moves belonged to the old range.
   useEffect(() => {
     setRowsBySymbol({});
     setLoadedOnce(false);
+    setSelectMode(false);
+    setSelectedSymbols([]);
     load(watchlistRef.current, timeframe);
   }, [timeframe, load]);
 
@@ -731,6 +874,78 @@ export default function TickersPage() {
     setExpanded((cur) => (cur === symbol ? null : symbol));
   }, []);
 
+  const enterSelectMode = useCallback((symbol: string) => {
+    setSelectMode(true);
+    setSelectedSymbols([symbol]);
+    setExpanded(null);
+  }, []);
+
+  const toggleSelected = useCallback((symbol: string) => {
+    setSelectedSymbols((cur) => {
+      if (cur.includes(symbol)) return cur.filter((s) => s !== symbol);
+      if (cur.length >= MAX_INVESTIGATE) return cur; // cap at 4, extra taps no-op
+      return [...cur, symbol];
+    });
+  }, []);
+
+  const exitSelectMode = useCallback(() => {
+    setSelectMode(false);
+    setSelectedSymbols([]);
+  }, []);
+
+  const startCooldown = useCallback(() => {
+    setCooldown(true);
+    if (cooldownTimer.current != null) window.clearTimeout(cooldownTimer.current);
+    cooldownTimer.current = window.setTimeout(() => setCooldown(false), 10_000);
+  }, []);
+  useEffect(() => () => {
+    if (cooldownTimer.current != null) window.clearTimeout(cooldownTimer.current);
+  }, []);
+
+  const runInvestigation = useCallback(
+    (assets: InvestigateAsset[], tf: Timeframe) => {
+      setInvestigation({ assets, timeframe: tf, status: 'loading' });
+      startCooldown();
+      fetch('/api/investigate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          tickers: assets.map((a) => ({
+            symbol: a.symbol,
+            name: a.name,
+            changePercent: a.pctLabel,
+            timeframe: TIMEFRAME_PHRASES[tf],
+          })),
+        }),
+      })
+        .then(async (res) => {
+          const json = await res.json().catch(() => null);
+          if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
+          if (typeof json?.analysis !== 'string') throw new Error('unexpected response shape');
+          setInvestigation((cur) => (cur ? { ...cur, status: 'done', text: json.analysis } : cur));
+        })
+        .catch((e) => {
+          setInvestigation((cur) =>
+            cur ? { ...cur, status: 'error', error: e instanceof Error ? e.message : String(e) } : cur,
+          );
+        });
+    },
+    [startCooldown],
+  );
+
+  const investigateSelected = useCallback(() => {
+    const assets: InvestigateAsset[] = [];
+    for (const s of selectedSymbols) {
+      const r = rowsBySymbol[s];
+      const c = r ? changeFor(r, is1D) : null;
+      if (c) assets.push({ symbol: s, name: r!.name, pct: c.pct, pctLabel: fmtPct(c.pct) });
+    }
+    if (assets.length === 0) return;
+    // Launching clears the selection; the panel keeps its own snapshot.
+    exitSelectMode();
+    runInvestigation(assets, timeframe);
+  }, [selectedSymbols, rowsBySymbol, is1D, timeframe, exitSelectMode, runInvestigation]);
+
   const renderRow = (s: string) => (
     <Row
       key={s}
@@ -741,12 +956,16 @@ export default function TickersPage() {
       row={rowsBySymbol[s] ?? (loadedOnce ? { symbol: s, ok: false } : undefined)}
       expanded={expanded === s}
       onToggle={() => toggleExpanded(s)}
+      selectMode={selectMode}
+      selected={selectedSymbols.includes(s)}
+      onToggleSelect={() => toggleSelected(s)}
+      onLongPress={() => enterSelectMode(s)}
     />
   );
 
   return (
     <div
-      className="min-h-screen px-4 pb-6"
+      className={`min-h-screen px-4 ${selectMode ? 'pb-28' : 'pb-6'}`}
       style={{ backgroundColor: PAGE_BG, backgroundImage: PAGE_GRADIENT, color: TEXT }}
     >
       {/* Placeholder color cannot be set inline; tiny route-scoped stylesheet. */}
@@ -875,6 +1094,50 @@ export default function TickersPage() {
           </div>
         )}
       </div>
+
+      {/* Floating action bar for select mode. */}
+      {selectMode && (
+        <div className="fixed bottom-0 left-0 right-0 z-20 px-4 pb-5 pointer-events-none">
+          <div
+            className="pointer-events-auto mx-auto flex w-fit items-center gap-1.5 rounded-full p-1.5"
+            style={{
+              background: CARD_BG,
+              border: `1px solid ${CARD_BORDER}`,
+              boxShadow: '0 6px 18px rgba(58,68,48,0.22), 0 16px 40px -12px rgba(58,68,48,0.3), inset 0 1px 0 rgba(255,255,255,0.9)',
+            }}
+          >
+            <button
+              onClick={exitSelectMode}
+              className="rounded-full px-4 py-2 text-sm font-medium"
+              style={{ color: TEXT_DIM }}
+            >
+              Cancel
+            </button>
+            <button
+              onClick={investigateSelected}
+              disabled={selectedSymbols.length === 0 || cooldown}
+              className="rounded-full px-5 py-2 text-sm font-semibold disabled:opacity-50"
+              style={{ background: SEG_ACTIVE_BG, color: '#ffffff', boxShadow: SEG_ACTIVE_SHADOW }}
+            >
+              Investigate ({selectedSymbols.length})
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Investigation results: slide-up sheet. Dismissing returns to the
+          normal list; the selection was already cleared at launch. */}
+      {investigation && (
+        <InvestigatePanel
+          assets={investigation.assets}
+          status={investigation.status}
+          text={investigation.text}
+          error={investigation.error}
+          retryDisabled={cooldown}
+          onRetry={() => runInvestigation(investigation.assets, investigation.timeframe)}
+          onClose={() => setInvestigation(null)}
+        />
+      )}
     </div>
   );
 }
