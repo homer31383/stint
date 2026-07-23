@@ -77,13 +77,22 @@ export async function runInvestigation(
     });
   }
 
-  // The response interleaves text blocks with web search tool results;
-  // the analysis is the concatenation of the text blocks.
-  const text = response.content
-    .filter((b): b is Anthropic.TextBlock => b.type === 'text')
-    .map((b) => b.text)
-    .join('\n')
-    .trim();
+  // The response interleaves text blocks with web search tool results, and
+  // cited prose arrives split across consecutive text blocks (one per cited
+  // span). Contiguous text blocks are therefore one passage and concatenate
+  // with no separator; only a tool-use boundary starts a new paragraph.
+  const passages: string[] = [];
+  let current = '';
+  for (const b of response.content) {
+    if (b.type === 'text') {
+      current += b.text;
+    } else if (current.trim()) {
+      passages.push(current.trim());
+      current = '';
+    }
+  }
+  if (current.trim()) passages.push(current.trim());
+  const text = passages.join('\n\n');
 
   if (!text) throw new Error('the analysis came back empty');
   return text;
