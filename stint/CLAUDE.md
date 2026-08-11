@@ -163,6 +163,8 @@ A "Personal" client (`__personal_client__`) and project (`__personal__`) are cre
 - **Search modal**: Global search in header, 200ms debounce, searches clients/projects/invoices/bookings. Full-screen on mobile.
 - **Timesheet project filter**: Defaults to showing only projects with active bookings for the current week. "All projects" option in the dropdown shows everything.
 - **jsonb fields pass through sync untouched**: `camelToSnake`/`snakeToCamel` skip arrays, so `contacts`, `rates`, `serviceRates`, `entryIds`, `lineItems` etc. all work without conversion since their inner keys are lowercase or the field is an array.
+- **Digit keys need explicit conversion overrides**: `lead3d`/`lead2d` ↔ `lead_3d`/`lead_2d` can't round-trip through the regex case conversions (no uppercase letter, no `_[a-z]`), so `useOfflineFirst.js` has `SNAKE_OVERRIDES`/`CAMEL_OVERRIDES` maps. Any future column with a digit after the underscore needs an entry there. Before this fix, every `stint_projects` upsert 400'd (unknown column `lead3d`) and new projects vanished on the next pull.
+- **Pull/push race guard**: Pulls are skipped while any push is in flight (`pushesInFlight` counter), and items written or deleted in the last 30s (`recentWrites`/`recentDeletes` maps) are preserved/filtered when applying a pull, so an in-flight stale SELECT can't wipe a just-created item or resurrect a just-deleted one.
 
 ## Sync history & lessons learned
 The sync layer was rewritten multiple times in the March 2026 session. Key lessons:
