@@ -2484,17 +2484,29 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
     return Object.values(byDate).filter(d => d.invoiced === d.total).length;
   }, [selClient, timeEntries, invoicedIds, rangeFrom, rangeTo, getProject]);
 
-  // Day rate cascade: booking → client → default. Uses the first project on the day for booking lookup.
-  const getDayRate = (day) => {
-    if (!getRate) return 0;
+  // Day billing: dominant service type from the day's entries (most hours wins; ties go to the
+  // higher rate). Day-based types bill one line at that type's rate via the cascade
+  // (booking → client → default); hourly/overtime days fall back to summing entry amounts.
+  const getDayBilling = (day) => {
     const client = getClient(selClient);
     const projectId = day.entries?.[0]?.projectId;
-    return getRate(client, "day_rate", { date: day.date, projectId });
+    const rateOf = (type) => getRate ? getRate(client, type, { date: day.date, projectId }) : 0;
+    const hoursByType = {};
+    (day.entries || []).forEach(e => { hoursByType[e.serviceType] = (hoursByType[e.serviceType] || 0) + (e.hours || 1); });
+    let dominant = "day_rate", best = -1;
+    Object.entries(hoursByType).forEach(([type, hrs]) => {
+      if (hrs > best || (hrs === best && rateOf(type) > rateOf(dominant))) { dominant = type; best = hrs; }
+    });
+    const dayBased = dominant === "day_rate" || dominant === "shoot_attend";
+    const label = SERVICE_TYPES.find(s => s.id === dominant)?.label || "Day Rate";
+    return { type: dominant, dayBased, label, rate: dayBased ? rateOf(dominant) : 0 };
   };
 
   const getDayAmount = (day) => {
     const mode = dayBillingMode[day.date] || "day_rate";
-    return mode === "day_rate" ? getDayRate(day) : day.totalAmount;
+    if (mode !== "day_rate") return day.totalAmount;
+    const b = getDayBilling(day);
+    return b.dayBased ? b.rate : day.totalAmount;
   };
 
   const toggleDay = (date) => {
@@ -2552,13 +2564,14 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
     // Day line items — honor per-day billing mode (Day Rate vs Hourly)
     const dayItems = selectedDayData.map(d => {
       const mode = dayBillingMode[d.date] || "day_rate";
-      const amount = mode === "day_rate" ? getDayRate(d) : d.totalAmount;
+      const b = getDayBilling(d);
+      const asDayBased = mode === "day_rate" && b.dayBased;
       return {
         type: "day",
         date: d.date,
-        hours: mode === "day_rate" ? null : d.totalHours,
-        amount,
-        note: mode === "day_rate" ? `${d.breakdown} (Day Rate)` : d.breakdown,
+        hours: asDayBased ? null : d.totalHours,
+        amount: asDayBased ? b.rate : d.totalAmount,
+        note: asDayBased ? `${d.breakdown} (${b.label})` : d.breakdown,
         billingMode: mode,
       };
     });
@@ -2687,10 +2700,10 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
                       {group.days.map(day => {
                     const on = selDays.includes(day.date);
                     const mode = dayBillingMode[day.date] || "day_rate";
-                    const dayRate = getDayRate(day);
-                    const displayAmount = on ? getDayAmount(day) : (mode === "day_rate" ? dayRate : day.totalAmount);
-                    const rateLabel = mode === "day_rate"
-                      ? `${fmt(dayRate)} day rate`
+                    const billing = getDayBilling(day);
+                    const displayAmount = mode === "day_rate" && billing.dayBased ? billing.rate : day.totalAmount;
+                    const rateLabel = mode === "day_rate" && billing.dayBased
+                      ? `${fmt(billing.rate)} ${billing.label.toLowerCase()}`
                       : `${day.totalHours}h · hourly`;
                     return (
                       <div key={day.date} style={{
@@ -2725,7 +2738,7 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
                               overflow: "hidden", background: t.white,
                             }}>
                               {[
-                                { id: "day_rate", label: "Day Rate" },
+                                { id: "day_rate", label: billing.dayBased ? billing.label : "Day Rate" },
                                 { id: "hourly", label: "Hourly" },
                               ].map(opt => {
                                 const active = mode === opt.id;
@@ -2743,8 +2756,8 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
                               })}
                             </div>
                             <span style={{ fontSize: "11.5px", color: t.textSecondary }}>
-                              {mode === "day_rate"
-                                ? `${fmt(dayRate)} · logged ${day.totalHours}h (${fmt(day.totalAmount)})`
+                              {mode === "day_rate" && billing.dayBased
+                                ? `${fmt(billing.rate)} · logged ${day.totalHours}h (${fmt(day.totalAmount)})`
                                 : `${day.totalHours}h logged · ${fmt(day.totalAmount)}`}
                             </span>
                           </div>
