@@ -2380,6 +2380,24 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
   const [viewInv, setViewInv] = useState(null);
   const [expenses, setExpenses] = useState([]); // [{id, description, amount}]
   const [expForm, setExpForm] = useState({ description: "", amount: "" });
+  const [rangeFrom, setRangeFrom] = useState(() => { const d = new Date(); d.setDate(d.getDate() - 30); return toISO(d); });
+  const [rangeTo, setRangeTo] = useState(todayISO());
+
+  const setQuickRange = (which) => {
+    const now = new Date();
+    if (which === "thisWeek" || which === "lastWeek") {
+      const mon = new Date(now);
+      mon.setDate(now.getDate() - ((now.getDay() + 6) % 7) - (which === "lastWeek" ? 7 : 0));
+      const sun = new Date(mon); sun.setDate(mon.getDate() + 6);
+      setRangeFrom(toISO(mon)); setRangeTo(toISO(sun));
+    } else if (which === "thisMonth") {
+      setRangeFrom(toISO(new Date(now.getFullYear(), now.getMonth(), 1)));
+      setRangeTo(toISO(new Date(now.getFullYear(), now.getMonth() + 1, 0)));
+    } else if (which === "lastMonth") {
+      setRangeFrom(toISO(new Date(now.getFullYear(), now.getMonth() - 1, 1)));
+      setRangeTo(toISO(new Date(now.getFullYear(), now.getMonth(), 0)));
+    }
+  };
 
   const addExpense = () => {
     if (!expForm.description.trim() || !expForm.amount) return;
@@ -2428,6 +2446,44 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
       });
   }, [selClient, timeEntries, invoicedIds, getProject]);
 
+  // Days within the range filter
+  const filteredDays = useMemo(() =>
+    clientDays.filter(d => d.date >= rangeFrom && d.date <= rangeTo),
+  [clientDays, rangeFrom, rangeTo]);
+
+  // Group filtered days by week (Mon-Sun)
+  const weekGroups = useMemo(() => {
+    const mondayOf = (iso) => {
+      const d = new Date(iso + "T12:00:00");
+      d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
+      return toISO(d);
+    };
+    const groups = [];
+    let cur = null;
+    filteredDays.forEach(day => {
+      const mon = mondayOf(day.date);
+      if (!cur || cur.monday !== mon) { cur = { monday: mon, days: [] }; groups.push(cur); }
+      cur.days.push(day);
+    });
+    return groups;
+  }, [filteredDays]);
+
+  // Days in range that are hidden because every entry is already on an invoice
+  const invoicedHiddenCount = useMemo(() => {
+    if (!selClient) return 0;
+    const byDate = {};
+    timeEntries.forEach(e => {
+      if (e.projectId === PERSONAL_PROJECT_ID) return;
+      if (e.date < rangeFrom || e.date > rangeTo) return;
+      const p = getProject(e.projectId);
+      if (!p || p.clientId !== selClient) return;
+      if (!byDate[e.date]) byDate[e.date] = { total: 0, invoiced: 0 };
+      byDate[e.date].total++;
+      if (invoicedIds.has(e.id)) byDate[e.date].invoiced++;
+    });
+    return Object.values(byDate).filter(d => d.invoiced === d.total).length;
+  }, [selClient, timeEntries, invoicedIds, rangeFrom, rangeTo, getProject]);
+
   // Day rate cascade: booking → client → default. Uses the first project on the day for booking lookup.
   const getDayRate = (day) => {
     if (!getRate) return 0;
@@ -2455,16 +2511,17 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
     setDayBillingMode(prev => prev[date] ? prev : { ...prev, [date]: "day_rate" });
   };
 
-  const selectAllDays = () => {
-    if (selDays.length === clientDays.length) {
-      setSelDays([]);
+  // Select a batch of days (pre-filling notes/billing mode), or deselect them all if already selected
+  const toggleDayBatch = (days) => {
+    const allOn = days.length > 0 && days.every(d => selDays.includes(d.date));
+    if (allOn) {
+      const dates = new Set(days.map(d => d.date));
+      setSelDays(prev => prev.filter(d => !dates.has(d)));
     } else {
-      const allDates = clientDays.map(d => d.date);
-      setSelDays(allDates);
-      // Pre-fill notes for all days
+      setSelDays(prev => [...new Set([...prev, ...days.map(d => d.date)])]);
       const newNotes = { ...dayNotes };
       const newModes = { ...dayBillingMode };
-      clientDays.forEach(d => {
+      days.forEach(d => {
         if (!newNotes[d.date]) newNotes[d.date] = d.existingNote || d.breakdown;
         if (!newModes[d.date]) newModes[d.date] = "day_rate";
       });
@@ -2472,6 +2529,9 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
       setDayBillingMode(newModes);
     }
   };
+
+  const allVisibleSelected = filteredDays.length > 0 && filteredDays.every(d => selDays.includes(d.date));
+  const selectAllDays = () => toggleDayBatch(filteredDays);
 
   const selTotal = useMemo(() => {
     const dayTotal = clientDays.filter(d => selDays.includes(d.date)).reduce((s, d) => s + getDayAmount(d), 0);
@@ -2580,10 +2640,51 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
               <div>
                 <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "8px" }}>
                   <label style={{ fontSize: "11.5px", fontWeight: 600, color: t.textSecondary }}>Select Days</label>
-                  <Btn v="ghost" size="sm" onClick={selectAllDays}>{selDays.length === clientDays.length ? "Deselect all" : "Select all"}</Btn>
+                  <Btn v="ghost" size="sm" onClick={selectAllDays} disabled={filteredDays.length === 0}>{allVisibleSelected ? "Deselect all" : "Select all"}</Btn>
                 </div>
-                <div style={{ maxHeight: "400px", overflow: "auto", display: "flex", flexDirection: "column", gap: "4px" }}>
-                  {clientDays.map(day => {
+
+                {/* Date range filter */}
+                <div style={{ display: "flex", gap: "8px", alignItems: "flex-end", flexWrap: "wrap", marginBottom: "8px" }}>
+                  <Field label="From" type="date" value={rangeFrom} onChange={setRangeFrom} style={{ width: "140px" }} />
+                  <Field label="To" type="date" value={rangeTo} onChange={setRangeTo} style={{ width: "140px" }} />
+                  <div style={{ display: "flex", gap: "4px", flexWrap: "wrap", paddingBottom: "1px" }}>
+                    {[
+                      { id: "thisWeek", label: "This Week" },
+                      { id: "lastWeek", label: "Last Week" },
+                      { id: "thisMonth", label: "This Month" },
+                      { id: "lastMonth", label: "Last Month" },
+                    ].map(q => (
+                      <Btn key={q.id} v="ghost" size="sm" onClick={() => setQuickRange(q.id)}>{q.label}</Btn>
+                    ))}
+                  </div>
+                </div>
+
+                {invoicedHiddenCount > 0 && (
+                  <div style={{ fontSize: "11.5px", color: t.textTertiary, marginBottom: "8px" }}>
+                    {invoicedHiddenCount} day{invoicedHiddenCount > 1 ? "s" : ""} already invoiced hidden
+                  </div>
+                )}
+
+                {filteredDays.length === 0 && (
+                  <Muted>No uninvoiced days in this date range.</Muted>
+                )}
+
+                <div style={{ maxHeight: "min(340px, 45vh)", overflow: "auto", display: "flex", flexDirection: "column", gap: "4px" }}>
+                  {weekGroups.map(group => (
+                    <div key={group.monday} style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 2px 0" }}>
+                        <span style={{ fontSize: "11px", fontWeight: 650, color: t.textTertiary, textTransform: "uppercase", letterSpacing: "0.03em" }}>
+                          Week of {new Date(group.monday + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                        </span>
+                        <button type="button" onClick={() => toggleDayBatch(group.days)}
+                          style={{
+                            background: "none", border: "none", fontSize: "11px", fontWeight: 600,
+                            color: t.green, cursor: "pointer", fontFamily: "'Instrument Sans', sans-serif", padding: "2px 0",
+                          }}>
+                          {group.days.every(d => selDays.includes(d.date)) ? "Deselect week" : "Select week"}
+                        </button>
+                      </div>
+                      {group.days.map(day => {
                     const on = selDays.includes(day.date);
                     const mode = dayBillingMode[day.date] || "day_rate";
                     const dayRate = getDayRate(day);
@@ -2601,7 +2702,7 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
                         {/* Day row — click to toggle */}
                         <div onClick={() => toggleDay(day.date)} style={{
                           display: "flex", alignItems: "center", gap: "10px",
-                          padding: "10px 12px", cursor: "pointer",
+                          padding: "11px 15px", cursor: "pointer",
                         }}>
                           <div style={{
                             width: "16px", height: "16px", borderRadius: "3px",
@@ -2649,8 +2750,10 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
                           </div>
                         )}
                       </div>
-                    );
-                  })}
+                        );
+                      })}
+                    </div>
+                  ))}
                 </div>
               </div>
             )}
