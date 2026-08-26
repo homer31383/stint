@@ -905,7 +905,8 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
   const [activeProject, setActiveProject] = useState(null); // { projectId, serviceType }
   const [selectedClient, setSelectedClient] = useState(""); // filter projects by client, "__all__" = show all
   const showAllProjects = selectedClient === "__all__";
-  const [noteModal, setNoteModal] = useState(null); // { entryIds, date, startHour, endHour, projectId }
+  const [noteModal, setNoteModal] = useState(null); // { entryIds, date, startHour, endHour, projectId, serviceType }
+  const [noteServiceType, setNoteServiceType] = useState("day_rate");
   const [noteText, setNoteText] = useState("");
   const [dayNoteModal, setDayNoteModal] = useState(null); // { date }
   const [dayNoteText, setDayNoteText] = useState("");
@@ -1189,14 +1190,28 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
       }
     }
     setNoteText(existingNote);
-    setNoteModal({ entryIds, date, startHour, endHour: startHour + span, projectId });
+    setNoteServiceType(serviceType);
+    setNoteModal({ entryIds, date, startHour, endHour: startHour + span, projectId, serviceType });
   };
 
   const saveNotes = () => {
     if (!noteModal) return;
     pushUndo();
+    const typeChanged = noteServiceType !== noteModal.serviceType;
+    let newRate = 0, newAmount = 0;
+    if (typeChanged) {
+      const proj = getProject(noteModal.projectId);
+      const client = proj ? getClient(proj.clientId) : null;
+      newRate = getRate(client, noteServiceType, { date: noteModal.date, projectId: noteModal.projectId });
+      const isHourBased = noteServiceType === "hourly" || noteServiceType === "overtime";
+      newAmount = Math.round((isHourBased ? newRate : newRate / 8) * 100) / 100;
+    }
     setTimeEntries(prev => prev.map(e =>
-      noteModal.entryIds.includes(e.id) ? { ...e, notes: noteText } : e
+      noteModal.entryIds.includes(e.id)
+        ? typeChanged
+          ? { ...e, notes: noteText, serviceType: noteServiceType, rate: newRate, amount: newAmount }
+          : { ...e, notes: noteText }
+        : e
     ));
     setNoteModal(null);
     setNoteText("");
@@ -1755,7 +1770,7 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
         const pc = projectColors[noteModal.projectId] || { bg: t.surfaceAlt, border: t.border, text: t.textSecondary, dot: t.textTertiary };
         const hours = noteModal.endHour - noteModal.startHour;
         return (
-          <Modal title="Edit Time Block" onClose={() => { setNoteModal(null); setNoteText(""); }} width={420}>
+          <Modal title="Edit Block" onClose={() => { setNoteModal(null); setNoteText(""); }} width={420}>
             <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
               {/* Block info */}
               <div style={{
@@ -1773,6 +1788,10 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
                   <div style={{ fontSize: "11px", color: pc.text, opacity: 0.7 }}>{fmtHourLong(noteModal.startHour)}&ndash;{fmtHourLong(noteModal.endHour)} ({hours}h)</div>
                 </div>
               </div>
+
+              {/* Service type */}
+              <Sel label="Service Type" value={noteServiceType} onChange={setNoteServiceType}
+                options={SERVICE_TYPES.filter(s => s.id !== "expense").map(s => ({value: s.id, label: s.label}))} />
 
               {/* Notes input */}
               <div>
