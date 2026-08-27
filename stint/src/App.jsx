@@ -2262,7 +2262,7 @@ function Pencils({ pencils, setPencils, projects, setProjects, clients, setClien
 // INVOICES
 // ============================================================
 // PDF Download — generates clean HTML invoice in a print window
-function downloadInvoicePDF(inv, settings) {
+function downloadInvoicePDF(inv, settings, paymentPlatform) {
   const fmtMoney = (n) => new Intl.NumberFormat("en-US", { style: "currency", currency: "USD" }).format(n);
   const fmtD = (d) => new Date(d + "T12:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 
@@ -2312,6 +2312,7 @@ function downloadInvoicePDF(inv, settings) {
   <div>
     <div style="font-size:11px;font-weight:600;color:#9c9a94;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;">Billed To</div>
     <div style="font-weight:600;">${inv.clientName || ""}</div>
+    ${paymentPlatform ? `<div style="font-size:12px;color:#5c5b57;margin-top:2px;">via ${paymentPlatform}</div>` : ""}
   </div>
   <div>
     <div style="font-size:11px;font-weight:600;color:#9c9a94;text-transform:uppercase;letter-spacing:0.04em;margin-bottom:4px;">Dates Worked</div>
@@ -2625,11 +2626,13 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
         <div style={{ display: "flex", flexDirection: "column", gap: "5px" }}>
           {invoices.map(inv => {
             const st = INVOICE_STATUS[inv.status];
+            const platform = getClient(inv.clientId)?.paymentPlatform;
             return (
               <Row key={inv.id} onClick={() => setViewInv(inv)}>
                 <span style={{ fontFamily: "monospace", fontSize: "13px", fontWeight: 700, color: t.text, minWidth: isMobile ? "auto" : "80px" }}>{inv.number}</span>
                 <span style={{ fontSize: "13px", fontWeight: 600 }}>{inv.clientName}</span>
                 <Tag color={st.color} bg={st.bg}>{st.label}</Tag>
+                {platform && <Tag color={t.textSecondary} bg={t.surfaceAlt}>{platform}</Tag>}
                 {!isMobile && <span style={{ fontSize: "12px", color: t.textTertiary }}>{inv.lineItems?.length || 0} days</span>}
                 {!isMobile && <span style={{ fontSize: "12px", color: t.textTertiary }}>{fmtDate(inv.issueDate)}</span>}
                 {!isMobile && inv.status === "paid" && inv.paidDate && <span style={{ fontSize: "11px", color: t.green, fontWeight: 600 }}>Paid {fmtDateShort(inv.paidDate)}</span>}
@@ -2841,6 +2844,9 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
               <div>
                 <div style={{ fontSize: "11px", fontWeight: 650, color: t.textTertiary, textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "4px" }}>Billed To</div>
                 <div style={{ fontWeight: 600, color: t.text }}>{viewInv.clientName}</div>
+                {getClient(viewInv.clientId)?.paymentPlatform && (
+                  <div style={{ fontSize: "12px", color: t.textSecondary, marginTop: "2px" }}>via {getClient(viewInv.clientId).paymentPlatform}</div>
+                )}
               </div>
               <div>
                 <div style={{ fontSize: "11px", fontWeight: 650, color: t.textTertiary, textTransform: "uppercase", letterSpacing: "0.03em", marginBottom: "4px" }}>Dates Worked</div>
@@ -2931,7 +2937,7 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
                 )}
               </div>
               <div style={{ display: "flex", gap: "4px" }}>
-                <Btn v="green" size="sm" onClick={() => downloadInvoicePDF(viewInv, settings)}>&#8595; Download PDF</Btn>
+                <Btn v="green" size="sm" onClick={() => downloadInvoicePDF(viewInv, settings, getClient(viewInv.clientId)?.paymentPlatform)}>&#8595; Download PDF</Btn>
                 <Btn v="danger" size="sm" onClick={() => { setInvoices(prev => prev.filter(i => i.id !== viewInv.id)); setViewInv(null); }}>Delete</Btn>
               </div>
             </div>
@@ -2947,7 +2953,7 @@ function Invoices({ invoices, setInvoices, timeEntries, projects, clients, penci
 function Clients({ clients, setClients, projects, setProjects, settings, timeEntries, pencils, invoices, getClient, getProject, getRate, isMobile }) {
   const [showAdd, setShowAdd] = useState(false);
   const [editId, setEditId] = useState(null);
-  const [form, setForm] = useState({ name: "", email: "", notes: "", serviceRates: {}, contacts: [] });
+  const [form, setForm] = useState({ name: "", email: "", paymentPlatform: "", notes: "", serviceRates: {}, contacts: [] });
   const [showAddProj, setShowAddProj] = useState(false);
   const [editProjId, setEditProjId] = useState(null);
   const [expandedClients, setExpandedClients] = useState({}); // { clientId: true/false }
@@ -2962,11 +2968,11 @@ function Clients({ clients, setClients, projects, setProjects, settings, timeEnt
     creativeDirector: "", lead3d: "", lead2d: "", myRole: "", dueDate: "", notes: "", status: "active",
   });
 
-  const startAdd = () => { setForm({ name: "", email: "", notes: "", serviceRates: {}, contacts: [] }); setEditId(null); setShowAdd(true); };
-  const startEdit = (c) => { setForm({ name: c.name, email: c.email || "", notes: c.notes || "", serviceRates: c.serviceRates || {}, contacts: c.contacts || [] }); setEditId(c.id); setShowAdd(true); };
+  const startAdd = () => { setForm({ name: "", email: "", paymentPlatform: "", notes: "", serviceRates: {}, contacts: [] }); setEditId(null); setShowAdd(true); };
+  const startEdit = (c) => { setForm({ name: c.name, email: c.email || "", paymentPlatform: c.paymentPlatform || "", notes: c.notes || "", serviceRates: c.serviceRates || {}, contacts: c.contacts || [] }); setEditId(c.id); setShowAdd(true); };
 
   const saveClient = () => {
-    const data = { name: form.name.trim(), email: form.email.trim(), notes: form.notes, serviceRates: form.serviceRates, contacts: form.contacts.filter(ct => ct.name || ct.role || ct.email) };
+    const data = { name: form.name.trim(), email: form.email.trim(), paymentPlatform: form.paymentPlatform.trim(), notes: form.notes, serviceRates: form.serviceRates, contacts: form.contacts.filter(ct => ct.name || ct.role || ct.email) };
     if (editId) {
       setClients(prev => prev.map(c => c.id === editId ? { ...c, ...data } : c));
     } else {
@@ -3082,6 +3088,7 @@ function Clients({ clients, setClients, projects, setProjects, settings, timeEnt
                       <div style={{ fontSize: "12px", color: t.textTertiary, marginTop: "2px" }}>
                         {activeCount} active project{activeCount !== 1 ? "s" : ""} &middot; {cEntries.length} entries
                         {(c.email || c.contacts?.[0]?.email) && <span> &middot; {c.email || c.contacts[0].email}</span>}
+                        {c.paymentPlatform && <span> &middot; via {c.paymentPlatform}</span>}
                       </div>
                     </div>
                   </div>
@@ -3181,6 +3188,7 @@ function Clients({ clients, setClients, projects, setProjects, settings, timeEnt
           <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
             <Field label="Name" value={form.name} onChange={v => setForm({...form, name:v})} placeholder="e.g. Coffee and TV" />
             <Field label="Email" value={form.email} onChange={v => setForm({...form, email:v})} placeholder="producer@agency.com" />
+            <Field label="Payment Platform" value={form.paymentPlatform} onChange={v => setForm({...form, paymentPlatform:v})} placeholder="e.g. Bill.com, Atrium, Deel" />
             <div>
               <label style={{ fontSize: "11.5px", fontWeight: 600, color: t.textSecondary, display: "block", marginBottom: "8px" }}>Contacts</label>
               {form.contacts.map((ct, i) => (

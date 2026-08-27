@@ -95,7 +95,7 @@ Supabase is the source of truth. The sync is simple:
 Shared Supabase instance (`xxsjfeafpzzcmadyvuue`) with Axiom — **never touch non-stint tables**.
 
 ### Tables
-**stint_clients** — `id` (text PK), `name`, `email`, `contacts` (jsonb, `[{name, role, email}]`), `notes`, `service_rates` (jsonb), `created_at`, `updated_at`
+**stint_clients** — `id` (text PK), `name`, `email`, `payment_platform` (text, e.g. "Bill.com"), `contacts` (jsonb, `[{name, role, email}]`), `notes`, `service_rates` (jsonb), `created_at`, `updated_at`
 
 **stint_projects** — `id` (text PK), `client_id` (FK → stint_clients ON DELETE CASCADE), `name`, `status` (active/on_hold/complete), `director`, `director_email`, `producer`, `producer_email`, `production_company`, `creative_director`, `lead_3d`, `lead_2d`, `my_role`, `due_date`, `notes`, `created_at`, `updated_at`
 
@@ -128,6 +128,7 @@ All tables have RLS enabled. Policy: `auth.uid() is not null` for all operations
 6. Manual: `ALTER TABLE stint_pencils ADD COLUMN IF NOT EXISTS client_id text;`
 7. Manual: `ALTER TABLE stint_pencils ADD COLUMN IF NOT EXISTS rates jsonb;`
 8. `004_day_notes.sql` — `stint_day_notes` table for per-day notes on the Time tab
+9. Manual: `ALTER TABLE stint_clients ADD COLUMN IF NOT EXISTS payment_platform text;`
 
 ## Service Types & Default Rates
 | ID | Label | Default Rate |
