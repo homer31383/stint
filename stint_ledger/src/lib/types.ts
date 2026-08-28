@@ -162,6 +162,9 @@ export interface FundHolding {
   shares: number;
   price: number;
   costBasis: number;
+  // Muted holdings stay in the list (and still get price refreshes) but are
+  // excluded from account totals and everything downstream of them.
+  muted?: boolean;
 }
 
 // Investment accounts that support a holdings sub-table in the NetWorth view.
@@ -214,12 +217,17 @@ export function holdingMarketValue(h: FundHolding): number {
 
 export function holdingsTotal(list: FundHolding[] | undefined): number {
   if (!list) return 0;
-  return list.reduce((s, h) => s + holdingMarketValue(h), 0);
+  return list.reduce((s, h) => h.muted ? s : s + holdingMarketValue(h), 0);
+}
+
+export function mutedHoldingsTotal(list: FundHolding[] | undefined): number {
+  if (!list) return 0;
+  return list.reduce((s, h) => h.muted ? s + holdingMarketValue(h) : s, 0);
 }
 
 export function holdingsCostBasisTotal(list: FundHolding[] | undefined): number {
   if (!list) return 0;
-  return list.reduce((s, h) => s + h.costBasis, 0);
+  return list.reduce((s, h) => h.muted ? s : s + h.costBasis, 0);
 }
 
 // Effective balance for a holdings-enabled key: holdings total if any, else manual.

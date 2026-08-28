@@ -269,7 +269,8 @@ function buildHoldings({ detailed }: BriefingInput): string {
   const allHoldings: { ticker: string; mv: number; accountLabel: string }[] = [];
 
   for (const key of HOLDINGS_ENABLED_KEYS) {
-    const list = detailed.holdings?.[key] ?? [];
+    // Muted holdings are excluded from the briefing entirely.
+    const list = (detailed.holdings?.[key] ?? []).filter((h) => !h.muted);
     if (list.length === 0) continue;
     const total = holdingsTotal(list);
     const costTotal = holdingsCostBasisTotal(list);

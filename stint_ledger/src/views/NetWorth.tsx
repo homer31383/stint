@@ -13,6 +13,7 @@ import {
   HOLDINGS_ENABLED_KEYS,
   holdingMarketValue,
   holdingsTotal,
+  mutedHoldingsTotal,
   holdingsCostBasisTotal,
   effectiveBalance,
 } from '../lib/types';
@@ -738,6 +739,8 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
   const gl = total - cost;
   const glPct = cost > 0 ? gl / cost : 0;
   const totalGlColor = gl > 0 ? 'text-positive' : gl < 0 ? 'text-negative' : 'text-gray-400';
+  const mutedCount = holdings.filter((h) => h.muted).length;
+  const mutedValue = mutedHoldingsTotal(holdings);
 
   return (
     <div className={`mt-2 mb-3 ${isMuted ? 'opacity-40' : ''}`}>
@@ -752,7 +755,7 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
               <th className="text-right font-medium py-1 px-2">Cost Basis</th>
               <th className="text-right font-medium py-1 px-2">G/L</th>
               <th className="text-right font-medium py-1 px-2">G/L %</th>
-              <th className="py-1 pl-2 w-6" />
+              <th className="py-1 pl-2 w-12" />
             </tr>
           </thead>
           <tbody>
@@ -762,8 +765,9 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
               const hpct = h.costBasis > 0 ? hgl / h.costBasis : 0;
               const glColor = hgl > 0 ? 'text-positive' : hgl < 0 ? 'text-negative' : 'text-gray-400';
               const isConfirm = confirmId === h.id;
+              const rowMuted = h.muted === true;
               return (
-                <tr key={h.id} className="border-t border-surface-3/50">
+                <tr key={h.id} className={`border-t border-surface-3/50 ${rowMuted ? 'opacity-40' : ''}`}>
                   <td className="py-1 pr-2 align-top">
                     <input
                       type="text"
@@ -818,22 +822,31 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
                   <td className={`py-1 px-2 align-top text-right ${glColor}`}>
                     {hgl >= 0 ? '+' : '−'}{fmtPct(Math.abs(hpct), 1)}
                   </td>
-                  <td className="py-1 pl-2 align-top text-right">
-                    <button
-                      onClick={() => {
-                        if (isConfirm) {
-                          onRemove(h.id);
-                          setConfirmId(null);
-                        } else {
-                          setConfirmId(h.id);
-                          setTimeout(() => setConfirmId((prev) => (prev === h.id ? null : prev)), 3000);
-                        }
-                      }}
-                      className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${isConfirm ? 'text-negative' : 'text-gray-600 hover:text-negative'}`}
-                      title={isConfirm ? 'Confirm delete' : 'Delete holding'}
-                    >
-                      {isConfirm ? '✓' : '×'}
-                    </button>
+                  <td className="py-1 pl-2 align-top">
+                    <div className="flex items-center justify-end gap-0.5">
+                      <button
+                        onClick={() => onUpdate(h.id, { muted: !rowMuted })}
+                        className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${rowMuted ? 'text-gray-600 hover:text-gray-400' : 'text-gray-500 hover:text-gray-300'}`}
+                        title={rowMuted ? 'Unmute holding' : 'Mute (exclude from totals)'}
+                      >
+                        {rowMuted ? '◌' : '◉'}
+                      </button>
+                      <button
+                        onClick={() => {
+                          if (isConfirm) {
+                            onRemove(h.id);
+                            setConfirmId(null);
+                          } else {
+                            setConfirmId(h.id);
+                            setTimeout(() => setConfirmId((prev) => (prev === h.id ? null : prev)), 3000);
+                          }
+                        }}
+                        className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${isConfirm ? 'text-negative' : 'text-gray-600 hover:text-negative'}`}
+                        title={isConfirm ? 'Confirm delete' : 'Delete holding'}
+                      >
+                        {isConfirm ? '✓' : '×'}
+                      </button>
+                    </div>
                   </td>
                 </tr>
               );
@@ -855,13 +868,19 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
           </tfoot>
         </table>
       </div>
-      <div className="pl-2 mt-1">
+      <div className="pl-2 mt-1 flex items-center justify-between gap-2">
         <button
           onClick={onAdd}
           className="text-[11px] text-accent hover:text-accent/80 transition-colors"
         >
           + Add holding
         </button>
+        {mutedCount > 0 && (
+          <span className="text-[11px] text-gray-600">
+            Muted: <span className="font-mono text-gray-500">{fmt(mutedValue)}</span>
+            {' '}({mutedCount} holding{mutedCount === 1 ? '' : 's'})
+          </span>
+        )}
       </div>
     </div>
   );
