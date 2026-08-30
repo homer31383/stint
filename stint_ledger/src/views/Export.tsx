@@ -8,6 +8,7 @@ import { useRetirementSettings } from '../hooks/useRetirementSettings';
 import { useSavedScenarios } from '../hooks/useSavedScenarios';
 import { buildBriefing } from '../lib/exportMarkdown';
 import { currentYear, weekdaysElapsedYTD } from '../lib/helpers';
+import { CD_DAY_RATE } from '../lib/rates';
 
 interface Props {
   data: StintData;
@@ -22,7 +23,8 @@ function makePlannerDefaults(data: StintData): PlannerSettings {
   const year = currentYear();
   const yearStr = String(year);
   const yearEntries = data.timeEntries.filter((e) => e.date.startsWith(yearStr));
-  const settingsRate = data.settings?.service_rates?.day_rate ?? 1200;
+  // Floor at the validated CD day rate — Stint settings may lag the rate card
+  const settingsRate = Math.max(data.settings?.service_rates?.day_rate ?? 0, CD_DAY_RATE);
   const dayRateDates = new Set(yearEntries.filter((e) => e.service_type === 'day_rate').map((e) => e.date));
   const weekdays = weekdaysElapsedYTD(year);
   const actualUtil = weekdays > 0 ? dayRateDates.size / weekdays : 0.55;

@@ -112,7 +112,7 @@ const GROUPS: AccountGroup[] = [
     sectionKey: 'savings',
     defaultType: 'hys',
     accounts: [
-      { key: 'highYieldSavings', label: 'High Yield Savings' },
+      { key: 'highYieldSavings', label: 'Synchrony HYS' },
       { key: 'openbankHYS', label: 'Openbank High Yield Savings' },
       { key: 'santanderMM', label: 'Santander Private Client Money Market' },
     ],

@@ -303,4 +303,4 @@ export function toAggregateBalances(d: DetailedBalances): AccountBalances {
 
 export const DEFAULT_BALANCES: AccountBalances = toAggregateBalances(DEFAULT_DETAILED);
 
-export type ViewId = 'dashboard' | 'utilization' | 'pipeline' | 'invoices' | 'planner' | 'expenses' | 'networth' | 'retirement' | 'export';
+export type ViewId = 'dashboard' | 'utilization' | 'pipeline' | 'invoices' | 'planner' | 'expenses' | 'networth' | 'retirement' | 'plans' | 'export';

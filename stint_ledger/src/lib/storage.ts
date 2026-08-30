@@ -163,6 +163,16 @@ export async function loadSavedScenarios(): Promise<Record<string, unknown>[] | 
   return (await db.get('stint', 'saved-scenarios')) ?? null;
 }
 
+export async function saveReferencePlans(model: Record<string, unknown>) {
+  const db = await getDB();
+  await db.put('stint', model, 'reference-plans');
+}
+
+export async function loadReferencePlans(): Promise<Record<string, unknown> | null> {
+  const db = await getDB();
+  return (await db.get('stint', 'reference-plans')) ?? null;
+}
+
 export async function saveExportProfile(profile: Record<string, unknown>) {
   const db = await getDB();
   await db.put('stint', profile, 'export-profile');
@@ -180,6 +190,7 @@ export interface SettingsBlob {
   detailedBalances: DetailedBalances | null;
   savedScenarios?: Record<string, unknown>[] | null;
   exportProfile?: Record<string, unknown> | null;
+  referencePlans?: Record<string, unknown> | null;
 }
 
 export async function gatherAllSettings(): Promise<SettingsBlob> {
@@ -191,6 +202,7 @@ export async function gatherAllSettings(): Promise<SettingsBlob> {
     detailedBalances: (await db.get('accounts', 'balances')) ?? null,
     savedScenarios: (await db.get('stint', 'saved-scenarios')) ?? null,
     exportProfile: (await db.get('stint', 'export-profile')) ?? null,
+    referencePlans: (await db.get('stint', 'reference-plans')) ?? null,
   };
 }
 
@@ -217,6 +229,9 @@ export async function applyAllSettings(blob: SettingsBlob) {
   }
   if (blob.exportProfile != null) {
     await stint.put(blob.exportProfile, 'export-profile');
+  }
+  if (blob.referencePlans != null) {
+    await stint.put(blob.referencePlans, 'reference-plans');
   }
 
   await tx.done;

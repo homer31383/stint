@@ -10,9 +10,8 @@ const FEDERAL_BRACKETS = [
 ];
 
 const STANDARD_DEDUCTION = 15000;
-const SE_TAX_RATE = 0.153;
-const SE_TAXABLE_PORTION = 0.9235;
 const NY_STATE_RATE = 0.07;
+const SS_WAGE_CAP = 176100; // 2025 Social Security wage base
 
 function calcFederalTax(taxableIncome: number): number {
   if (taxableIncome <= 0) return 0;
@@ -25,17 +24,19 @@ function calcFederalTax(taxableIncome: number): number {
   return tax;
 }
 
+// Employee-side FICA: 6.2% SS (capped) + 1.45% Medicare
+function calcFica(grossAnnual: number): number {
+  const ssTax = Math.min(grossAnnual, SS_WAGE_CAP) * 0.062;
+  const medicareTax = grossAnnual * 0.0145;
+  return ssTax + medicareTax;
+}
+
 export function estimateW2Taxes(grossAnnual: number, employee401k: number = 0) {
-  // No SE tax for W-2 employees
   const agi = grossAnnual - employee401k; // 401k is pre-tax
   const federalTaxable = Math.max(0, agi - STANDARD_DEDUCTION);
   const federalTax = calcFederalTax(federalTaxable);
   const stateTax = agi * NY_STATE_RATE;
-  // FICA: 6.2% SS (capped at $176,100 for 2025) + 1.45% Medicare
-  const ssCap = 176100;
-  const ssTax = Math.min(grossAnnual, ssCap) * 0.062;
-  const medicareTax = grossAnnual * 0.0145;
-  const fica = ssTax + medicareTax;
+  const fica = calcFica(grossAnnual);
   const totalTax = federalTax + stateTax + fica;
   const effectiveRate = grossAnnual > 0 ? totalTax / grossAnnual : 0;
   const netAnnual = grossAnnual - totalTax - employee401k;
@@ -46,27 +47,24 @@ export function estimateW2Taxes(grossAnnual: number, employee401k: number = 0) {
   };
 }
 
+// Freelance engagements are W-2 payrolled (employer of record pays the
+// employer half of FICA), so freelance income is taxed like wages:
+// employee-side FICA only — NOT the 15.3% self-employment tax.
 export function estimateTaxes(grossAnnual: number) {
-  // Self-employment tax
-  const seTaxableIncome = grossAnnual * SE_TAXABLE_PORTION;
-  const seTax = seTaxableIncome * SE_TAX_RATE;
-
-  // Deduct half of SE tax from AGI
-  const halfSE = seTax / 2;
-  const agi = grossAnnual - halfSE;
+  const fica = calcFica(grossAnnual);
 
   // Federal income tax
-  const federalTaxable = Math.max(0, agi - STANDARD_DEDUCTION);
+  const federalTaxable = Math.max(0, grossAnnual - STANDARD_DEDUCTION);
   const federalTax = calcFederalTax(federalTaxable);
 
   // NY state tax
-  const stateTax = agi * NY_STATE_RATE;
+  const stateTax = grossAnnual * NY_STATE_RATE;
 
-  const totalTax = seTax + federalTax + stateTax;
+  const totalTax = fica + federalTax + stateTax;
   const effectiveRate = grossAnnual > 0 ? totalTax / grossAnnual : 0;
 
   return {
-    seTax,
+    fica,
     federalTax,
     stateTax,
     totalTax,

@@ -4,6 +4,7 @@ import { StatCard } from '../components/StatCard';
 import { Panel } from '../components/Panel';
 import { Slider } from '../components/Slider';
 import { estimateTaxes, estimateW2Taxes } from '../lib/tax';
+import { CD_DAY_RATE, SHOOT_SUP_RATE } from '../lib/rates';
 import { fmt, fmtPct, currentYear, weekdaysElapsedYTD, weekdaysBetween } from '../lib/helpers';
 import { usePlannerSettings, migrateLegacyExpenses } from '../hooks/usePlannerSettings';
 import type { PlannerSettings } from '../hooks/usePlannerSettings';
@@ -25,7 +26,8 @@ export function Planner({ data, balances }: Props) {
 
   // Calculate actual defaults from data
   const computedDefaults = useMemo(() => {
-    const settingsRate = data.settings?.service_rates?.day_rate ?? 1200;
+    // Floor at the validated CD day rate — Stint settings may lag the rate card
+    const settingsRate = Math.max(data.settings?.service_rates?.day_rate ?? 0, CD_DAY_RATE);
     const yearEntries = data.timeEntries.filter((e) => e.date.startsWith(String(year)));
     const dayRateDates = new Set(yearEntries.filter((e) => e.service_type === 'day_rate').map((e) => e.date));
     const weekdays = weekdaysElapsedYTD(year);
@@ -287,13 +289,13 @@ export function Planner({ data, balances }: Props) {
   // Scenario comparison
   const scenarios = useMemo(() => {
     const configs = [
-      { name: '50% · $1,200', rate: 1200, util: 0.5 },
-      { name: '55% · $1,200', rate: 1200, util: 0.55 },
-      { name: '60% · $1,200', rate: 1200, util: 0.6 },
-      { name: '65% · $1,200', rate: 1200, util: 0.65 },
-      { name: '70% · $1,200', rate: 1200, util: 0.7 },
-      { name: '55% · $1,400', rate: 1400, util: 0.55 },
-      { name: '65% · $1,400', rate: 1400, util: 0.65 },
+      { name: '50% · $1,384', rate: CD_DAY_RATE, util: 0.5 },
+      { name: '55% · $1,384', rate: CD_DAY_RATE, util: 0.55 },
+      { name: '60% · $1,384', rate: CD_DAY_RATE, util: 0.6 },
+      { name: '65% · $1,384', rate: CD_DAY_RATE, util: 0.65 },
+      { name: '70% · $1,384', rate: CD_DAY_RATE, util: 0.7 },
+      { name: '55% · $1,500', rate: SHOOT_SUP_RATE, util: 0.55 },
+      { name: '65% · $1,500', rate: SHOOT_SUP_RATE, util: 0.65 },
       { name: '60% · $1,600', rate: 1600, util: 0.6 },
     ];
 
@@ -846,6 +848,24 @@ export function Planner({ data, balances }: Props) {
 
         {mode === 'freelance' && (
           <div className="border-t border-surface-3 pt-4 mt-2">
+            <div className="flex gap-2 mb-2">
+              {[
+                { label: 'CD day rate', rate: CD_DAY_RATE },
+                { label: 'Shoot supervisor', rate: SHOOT_SUP_RATE },
+              ].map((p) => (
+                <button
+                  key={p.rate}
+                  onClick={() => update('dayRate', p.rate)}
+                  className={`text-xs px-2.5 py-1 rounded border transition-colors ${
+                    dayRate === p.rate
+                      ? 'border-accent text-accent bg-accent/10'
+                      : 'border-surface-3 text-gray-500 hover:text-gray-300 hover:border-gray-600'
+                  }`}
+                >
+                  {p.label} · {fmt(p.rate)}
+                </button>
+              ))}
+            </div>
             <Slider label="Day Rate" value={dayRate} min={800} max={2000} step={50} format={fmt} onChange={(v) => update('dayRate', v)} />
             <Slider
               label="Utilization"

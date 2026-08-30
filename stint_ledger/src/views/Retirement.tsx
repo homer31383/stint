@@ -20,7 +20,7 @@ interface ProjectionYear {
 }
 
 const PLANNER_DEFAULTS = {
-  dayRate: 1200, utilization: 0.55, vacationDays: 10, holidays: 10, sickDays: 5,
+  dayRate: 1384, utilization: 0.55, vacationDays: 10, holidays: 10, sickDays: 5,
   monthlyExpensesFreelance: 7150, monthlyExpensesFullTime: 7150,
   healthIns: 1600, ftHealthIns: 300,
   equityReturn: 0.07, rolloverReturn: 0.07,

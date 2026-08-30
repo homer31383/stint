@@ -53,7 +53,8 @@ Vite is configured with `server: { host: '0.0.0.0' }` so the dev server is acces
     │   ├── types.ts                     All TypeScript interfaces (Stint data, balances, view IDs)
     │   ├── supabase.ts                  Supabase client singleton, fetchStintData() fetches all 6 tables
     │   ├── storage.ts                   IndexedDB helpers: save/load for cache, balances, settings, scenarios, sync
-    │   ├── tax.ts                       estimateTaxes() (freelance SE+fed+state), estimateW2Taxes() (W-2)
+    │   ├── tax.ts                       estimateTaxes() (payrolled freelance: FICA+fed+state), estimateW2Taxes() (W-2)
+    │   ├── rates.ts                     Rate card constants: CD_DAY_RATE ($1,384), SHOOT_SUP_RATE ($1,500)
     │   └── helpers.ts                   fmt(), fmtPct(), weekdaysElapsedYTD(), currentYear(), parseDate()
     ├── hooks/
     │   ├── useStintData.ts              Fetches Supabase -> caches IDB -> returns data/loading/error/refresh
@@ -61,6 +62,7 @@ Vite is configured with `server: { host: '0.0.0.0' }` so the dev server is acces
     │   ├── usePlannerSettings.ts        Planner slider state, persists to IDB, merge-on-load with defaults
     │   ├── useExpenseModel.ts           Recurring/one-time expenses, drag reorder, replace model, uuid() fallback
     │   ├── useRetirementSettings.ts     Retirement scenario sliders, persists to IDB
+    │   ├── useReferencePlans.ts         Reference plans model (sections/cards/checklists), persists to IDB
     │   ├── useSavedScenarios.ts         Save/load/compare named planner+expense snapshots, persists to IDB
     │   └── useSettingsSync.ts           Push/pull settings to Supabase ledger_sync table
     ├── components/
@@ -79,7 +81,8 @@ Vite is configured with `server: { host: '0.0.0.0' }` so the dev server is acces
         ├── Planner.tsx                  Days-to-target, scenario modeler, saved scenarios, compare mode, 5-year projection
         ├── Expenses.tsx                 Drag-to-reorder recurring, one-time expenses, mute toggle, financial impact
         ├── NetWorth.tsx                 Per-account editing, asset allocation, FI progress, runway
-        └── Retirement.tsx               Long-term projection age->95, portfolio longevity, safe withdrawal
+        ├── Retirement.tsx               Long-term projection age->95, portfolio longevity, safe withdrawal
+        └── Plans.tsx                    Reference Plans: editable plan cards in 4 collapsible sections
 ```
 
 ## Architecture & Data Flow
@@ -175,6 +178,7 @@ All tables have RLS enabled with `TO authenticated` policies:
 | Expenses | StintData, AccountBalances, useExpenseModel, usePlannerSettings | Drag-to-reorder recurring, mute toggle, financial impact simulation |
 | Net Worth | DetailedBalances, AccountBalances | Per-account editing, allocation chart, FI progress, runway |
 | Retirement | AccountBalances, useRetirementSettings | Age->95 projection, depletion warnings, safe withdrawal |
+| Plans | useReferencePlans | Editable reference of financial plans: monthly/annual/conditional sections + dated checklists with deadlines and persisted checkbox state. IDB key `stint/reference-plans`, included in settings sync |
 
 ## Planner View — Sections (in order)
 
@@ -238,9 +242,10 @@ ccDebt      = citiDoubleCash  (negative number)
 ## Tax Estimation
 
 ### Freelance (`estimateTaxes`)
-- SE tax: 15.3% on 92.35% of gross
-- Federal: progressive brackets on (AGI - half SE - $15k deduction)
-- NY State: 7% flat on AGI
+- Freelance engagements are W-2 payrolled (employer of record pays the employer half of FICA), so freelance income is taxed like wages — NOT self-employment tax
+- FICA: employee-side only — 6.2% SS (capped $176,100) + 1.45% Medicare
+- Federal: progressive brackets on (gross - $15k standard deduction)
+- NY State: 7% flat on gross
 - Brackets: 10%->$11,925 / 12%->$48,475 / 22%->$103,350 / 24%->$197,300 / 32%->$250,525 / 35%->$626,350 / 37% above
 
 ### Full-time (`estimateW2Taxes`)
@@ -257,7 +262,7 @@ PC is source of truth. Push from PC, pull on phone.
 
 **Pull:** Reads `ledger_sync` row -> `applyAllSettings()` writes to IDB -> saves pull timestamp -> `window.location.reload()`
 
-**Synced keys:** `plannerSettings`, `retirementSettings`, `expenseModel`, `detailedBalances`, `savedScenarios`
+**Synced keys:** `plannerSettings`, `retirementSettings`, `expenseModel`, `detailedBalances`, `savedScenarios`, `exportProfile`, `referencePlans`
 
 **Timestamps:** `lastPushed`/`lastPulled` in localStorage (survive reload), `serverUpdatedAt` fetched from Supabase on mount.
 

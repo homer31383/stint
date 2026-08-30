@@ -15,7 +15,7 @@ interface Props {
 export function Pipeline({ data }: Props) {
   const today = new Date().toISOString().slice(0, 10);
 
-  const defaultDayRate = data.settings?.service_rates?.day_rate ?? 1200;
+  const defaultDayRate = data.settings?.service_rates?.day_rate ?? 1384;
 
   const clientMap = useMemo(() => {
     const m = new Map<string, { name: string; dayRate: number }>();

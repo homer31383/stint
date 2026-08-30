@@ -4,6 +4,7 @@ import { StatCard } from '../components/StatCard';
 import { Panel } from '../components/Panel';
 import { fmt, currentYear, weekdaysElapsedYTD } from '../lib/helpers';
 import { estimateTaxes, estimateW2Taxes } from '../lib/tax';
+import { CD_DAY_RATE } from '../lib/rates';
 import { useExpenseModel } from '../hooks/useExpenseModel';
 import { usePlannerSettings } from '../hooks/usePlannerSettings';
 import type { RecurringExpense, OneTimeExpense } from '../hooks/useExpenseModel';
@@ -172,7 +173,8 @@ export function Expenses({ data, balances }: Props) {
   // Pull Planner settings for income/return calculations
   const year = currentYear();
   const plannerDefaults = useMemo(() => {
-    const settingsRate = data.settings?.service_rates?.day_rate ?? 1200;
+    // Floor at the validated CD day rate — Stint settings may lag the rate card
+    const settingsRate = Math.max(data.settings?.service_rates?.day_rate ?? 0, CD_DAY_RATE);
     const yearEntries = data.timeEntries.filter((e) => e.date.startsWith(String(year)));
     const dayRateDates = new Set(yearEntries.filter((e) => e.service_type === 'day_rate').map((e) => e.date));
     const weekdays = weekdaysElapsedYTD(year);

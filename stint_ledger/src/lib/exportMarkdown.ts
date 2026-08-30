@@ -82,7 +82,7 @@ const ACCOUNT_GROUPS: { heading: string; entries: { key: FixedAccountKey; label:
   {
     heading: 'Savings',
     entries: [
-      { key: 'highYieldSavings', label: 'High Yield Savings', type: 'asset' },
+      { key: 'highYieldSavings', label: 'Synchrony HYS', type: 'asset' },
       { key: 'openbankHYS', label: 'Openbank High Yield Savings', type: 'asset' },
       { key: 'santanderMM', label: 'Santander Private Client Money Market', type: 'asset' },
     ],
@@ -344,7 +344,7 @@ function buildIncomeWork({ data }: BriefingInput): string {
   const avgDayRate = daysWorked > 0
     ? dayRateEntries.reduce((s, e) => s + e.amount, 0) / daysWorked
     : 0;
-  const currentDayRate = data.settings?.service_rates?.day_rate ?? 1200;
+  const currentDayRate = data.settings?.service_rates?.day_rate ?? 1384;
 
   out.push(`- **YTD income:** ${m$(ytdIncome)}`);
   out.push(`- **Days worked:** ${daysWorked} of ${weekdaysElapsed} weekdays elapsed`);
