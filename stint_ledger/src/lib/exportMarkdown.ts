@@ -10,6 +10,7 @@ import type {
 import {
   HOLDINGS_ENABLED_KEYS,
   holdingMarketValue,
+  holdingLabel,
   holdingsTotal,
   holdingsCostBasisTotal,
   effectiveBalance,
@@ -266,7 +267,7 @@ function buildHoldings({ detailed }: BriefingInput): string {
   const out: string[] = ['## 3. Investment Holdings'];
 
   let portfolioMV = 0;
-  const allHoldings: { ticker: string; mv: number; accountLabel: string }[] = [];
+  const allHoldings: { label: string; mv: number; accountLabel: string }[] = [];
 
   for (const key of HOLDINGS_ENABLED_KEYS) {
     // Muted holdings are excluded from the briefing entirely.
@@ -286,9 +287,10 @@ function buildHoldings({ detailed }: BriefingInput): string {
       const expense = EXPENSE_RATIOS[h.ticker.toUpperCase()];
       const expStr = expense !== undefined ? mPct(expense, 2) : '—';
       portfolioMV += mv;
-      allHoldings.push({ ticker: h.ticker, mv, accountLabel: HOLDINGS_LABEL[key] });
+      // Display name (when set) stands in for the ticker — display privacy only
+      allHoldings.push({ label: holdingLabel(h), mv, accountLabel: HOLDINGS_LABEL[key] });
       return [
-        h.ticker,
+        holdingLabel(h),
         h.name,
         h.shares.toLocaleString('en-US', { maximumFractionDigits: 3 }),
         m$(mv),
@@ -300,24 +302,24 @@ function buildHoldings({ detailed }: BriefingInput): string {
     });
 
     out.push(mTable(
-      ['Ticker', 'Name', 'Shares', 'Mkt Value', 'Cost Basis', 'G/L', 'G/L %', 'Expense Ratio'],
+      ['Holding', 'Name', 'Shares', 'Mkt Value', 'Cost Basis', 'G/L', 'G/L %', 'Expense Ratio'],
       rows,
     ));
     out.push(`\n**Account total:** ${m$(total)} • **Cost basis:** ${m$(costTotal)} • **Unrealized G/L:** ${accountGL >= 0 ? '+' : ''}${m$(accountGL)} (${accountGL >= 0 ? '+' : ''}${mPct(accountGLPct, 2)})`);
   }
 
-  // Overall portfolio allocation by ticker
+  // Overall portfolio allocation by holding label
   if (allHoldings.length > 0 && portfolioMV > 0) {
-    const byTicker = new Map<string, number>();
+    const byLabel = new Map<string, number>();
     for (const h of allHoldings) {
-      byTicker.set(h.ticker, (byTicker.get(h.ticker) ?? 0) + h.mv);
+      byLabel.set(h.label, (byLabel.get(h.label) ?? 0) + h.mv);
     }
-    const allocRows = Array.from(byTicker.entries())
+    const allocRows = Array.from(byLabel.entries())
       .sort((a, b) => b[1] - a[1])
-      .map(([ticker, value]) => [ticker, m$(value), mPct(value / portfolioMV, 1)]);
+      .map(([label, value]) => [label, m$(value), mPct(value / portfolioMV, 1)]);
 
     out.push(`\n### Portfolio Allocation by Fund\n`);
-    out.push(mTable(['Ticker', 'Value', '% of Portfolio'], allocRows));
+    out.push(mTable(['Holding', 'Value', '% of Portfolio'], allocRows));
     out.push(`\n**Total portfolio market value:** ${m$(portfolioMV)}`);
   }
 

@@ -12,6 +12,7 @@ import type {
 import {
   HOLDINGS_ENABLED_KEYS,
   holdingMarketValue,
+  holdingLabel,
   holdingsTotal,
   mutedHoldingsTotal,
   holdingsCostBasisTotal,
@@ -212,6 +213,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
   const [drafts, setDrafts] = useState<Partial<Record<SectionKey, NewAccountDraft>>>({});
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [rowRefreshing, setRowRefreshing] = useState<Set<string>>(() => new Set());
   const [priceMsg, setPriceMsg] = useState<{ kind: 'ok' | 'warn' | 'err'; text: string } | null>(null);
 
   const muted = useMemo(
@@ -325,6 +327,51 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
       setRefreshing(false);
     }
   }, [detailed, onSave, refreshing]);
+
+  // Refresh a single ticker and update every holding sharing it (a shared
+  // ticker left un-updated would show a stale price next to a fresh one).
+  const refreshTicker = useCallback(async (rawTicker: string) => {
+    const t = rawTicker.trim().toUpperCase();
+    if (!t || rowRefreshing.has(t)) return;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setPriceMsg({ kind: 'warn', text: 'You are offline — showing the last fetched prices.' });
+      return;
+    }
+
+    setRowRefreshing(prev => new Set(prev).add(t));
+    setPriceMsg(null);
+    try {
+      const { prices, skipped } = await fetchPrices([t]);
+      const p = prices[t];
+      if (p == null) {
+        if (skipped.includes(t)) {
+          setPriceMsg({ kind: 'warn', text: `${t} is not a quotable symbol — skipped.` });
+        } else {
+          setPriceMsg({ kind: 'err', text: `Could not fetch ${t} — kept previous value.` });
+        }
+        return;
+      }
+
+      const holdings: NonNullable<DetailedBalances['holdings']> = {};
+      for (const key of HOLDINGS_ENABLED_KEYS) {
+        const list = detailed.holdings?.[key];
+        if (!list) continue;
+        holdings[key] = list.map(h => h.ticker.trim().toUpperCase() === t ? { ...h, price: p } : h);
+      }
+
+      const now = Date.now();
+      onSave({ ...detailed, holdings, pricesUpdated: now, lastUpdated: now });
+      setPriceMsg({ kind: 'ok', text: `${t} updated to $${p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.` });
+    } catch {
+      setPriceMsg({ kind: 'err', text: `Could not fetch ${t} — kept previous value.` });
+    } finally {
+      setRowRefreshing(prev => {
+        const next = new Set(prev);
+        next.delete(t);
+        return next;
+      });
+    }
+  }, [detailed, onSave, rowRefreshing]);
 
   const startDraft = useCallback((section: SectionKey, defaultType: CustomAccountType) => {
     setDrafts(prev => ({ ...prev, [section]: { name: '', balance: '', type: defaultType } }));
@@ -558,6 +605,8 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
                                 onUpdate={(id, patch) => updateHolding(holdingsKey, id, patch)}
                                 onAdd={() => addHolding(holdingsKey)}
                                 onRemove={(id) => removeHolding(holdingsKey, id)}
+                                onRefreshTicker={refreshTicker}
+                                refreshingTickers={rowRefreshing}
                               />
                             )}
                           </div>
@@ -708,6 +757,8 @@ interface HoldingsEditorProps {
   onUpdate: (id: string, patch: Partial<Omit<FundHolding, 'id'>>) => void;
   onAdd: () => void;
   onRemove: (id: string) => void;
+  onRefreshTicker: (ticker: string) => void;
+  refreshingTickers: Set<string>;
 }
 
 function fmtSigned(n: number): string {
@@ -718,8 +769,10 @@ function fmtSigned(n: number): string {
   return `$0`;
 }
 
-function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemove }: HoldingsEditorProps) {
+function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemove, onRefreshTicker, refreshingTickers }: HoldingsEditorProps) {
   const [confirmId, setConfirmId] = useState<string | null>(null);
+  // Row whose display name / ticker fields are expanded for editing
+  const [identityEditId, setIdentityEditId] = useState<string | null>(null);
 
   if (holdings.length === 0) {
     return (
@@ -748,14 +801,14 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
         <table className="w-full text-xs font-mono min-w-[560px]">
           <thead>
             <tr className="text-[10px] uppercase tracking-wide text-gray-600">
-              <th className="text-left font-medium py-1 pr-2">Ticker</th>
+              <th className="text-left font-medium py-1 pr-2">Holding</th>
               <th className="text-right font-medium py-1 px-2">Shares</th>
               <th className="text-right font-medium py-1 px-2">Price</th>
               <th className="text-right font-medium py-1 px-2">Mkt Val</th>
               <th className="text-right font-medium py-1 px-2">Cost Basis</th>
               <th className="text-right font-medium py-1 px-2">G/L</th>
               <th className="text-right font-medium py-1 px-2">G/L %</th>
-              <th className="py-1 pl-2 w-12" />
+              <th className="py-1 pl-2 w-16" />
             </tr>
           </thead>
           <tbody>
@@ -766,16 +819,51 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
               const glColor = hgl > 0 ? 'text-positive' : hgl < 0 ? 'text-negative' : 'text-gray-400';
               const isConfirm = confirmId === h.id;
               const rowMuted = h.muted === true;
+              const rowRefreshBusy = refreshingTickers.has(h.ticker.trim().toUpperCase());
               return (
                 <tr key={h.id} className={`border-t border-surface-3/50 ${rowMuted ? 'opacity-40' : ''}`}>
                   <td className="py-1 pr-2 align-top">
-                    <input
-                      type="text"
-                      value={h.ticker}
-                      onChange={(e) => onUpdate(h.id, { ticker: e.target.value.toUpperCase() })}
-                      placeholder="TICKER"
-                      className="w-20 bg-transparent border border-transparent hover:border-surface-3 focus:bg-surface-3 focus:border-accent rounded px-1.5 py-0.5 text-gray-200 uppercase focus:outline-none"
-                    />
+                    {identityEditId === h.id ? (
+                      <div className="space-y-1">
+                        <div>
+                          <div className="text-[9px] uppercase tracking-wide text-gray-600 px-1.5">Display name</div>
+                          <input
+                            type="text"
+                            value={h.displayName ?? ''}
+                            onChange={(e) => onUpdate(h.id, { displayName: e.target.value })}
+                            placeholder="(optional)"
+                            autoFocus
+                            className="w-28 bg-surface-3 border border-surface-3 focus:border-accent rounded px-1.5 py-0.5 text-gray-200 focus:outline-none"
+                          />
+                        </div>
+                        <div>
+                          <div className="text-[9px] uppercase tracking-wide text-gray-600 px-1.5">Ticker (for pricing)</div>
+                          <input
+                            type="text"
+                            value={h.ticker}
+                            onChange={(e) => onUpdate(h.id, { ticker: e.target.value.toUpperCase() })}
+                            placeholder="TICKER"
+                            className="w-28 bg-surface-3 border border-surface-3 focus:border-accent rounded px-1.5 py-0.5 text-gray-200 uppercase focus:outline-none"
+                          />
+                        </div>
+                        <button
+                          onClick={() => setIdentityEditId(null)}
+                          className="text-[10px] text-accent hover:text-accent/80 transition-colors px-1.5"
+                        >
+                          Done
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => setIdentityEditId(h.id)}
+                        title={h.displayName?.trim()
+                          ? `Prices from ${h.ticker || '—'} — click to edit name/ticker`
+                          : 'Click to edit name/ticker'}
+                        className={`w-20 text-left bg-transparent border border-transparent hover:border-surface-3 rounded px-1.5 py-0.5 truncate ${h.displayName?.trim() ? '' : 'uppercase'} ${holdingLabel(h) ? 'text-gray-200' : 'text-gray-600'}`}
+                      >
+                        {holdingLabel(h) || 'TICKER'}
+                      </button>
+                    )}
                     <input
                       type="text"
                       value={h.name}
@@ -824,6 +912,14 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
                   </td>
                   <td className="py-1 pl-2 align-top">
                     <div className="flex items-center justify-end gap-0.5">
+                      <button
+                        onClick={() => onRefreshTicker(h.ticker)}
+                        disabled={rowRefreshBusy || !h.ticker.trim()}
+                        className="w-5 h-5 flex items-center justify-center rounded transition-colors text-gray-500 hover:text-accent disabled:hover:text-gray-500 disabled:opacity-50"
+                        title={h.ticker.trim() ? `Refresh ${h.ticker.trim().toUpperCase()} price` : 'Set a ticker to fetch a price'}
+                      >
+                        <span className={rowRefreshBusy ? 'inline-block animate-spin' : ''}>↻</span>
+                      </button>
                       <button
                         onClick={() => onUpdate(h.id, { muted: !rowMuted })}
                         className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${rowMuted ? 'text-gray-600 hover:text-gray-400' : 'text-gray-500 hover:text-gray-300'}`}

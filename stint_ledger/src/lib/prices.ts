@@ -1,9 +1,14 @@
-// Fetches current per-share prices for fund/ETF tickers. Mutual funds (AEPGX,
-// ANEFX, DODBX) and ETFs (SPY) are all supported. None of these endpoints send
-// CORS headers to browser origins, so every request is also attempted through a
-// public CORS proxy. Each ticker is tried against several endpoints in order
-// until one returns a usable price; every failed attempt is logged to the
-// console with its HTTP status / error so problems can be diagnosed.
+// Fetches current per-share prices for fund/ETF/crypto tickers.
+//
+// Primary path: GET /api/tickers?symbols=... — the same serverless function the
+// tickers page uses (api/tickers.ts in production, the Vite dev middleware
+// locally). One request, all symbols fetched in parallel server-side, no CORS
+// issues, no per-ticker delays.
+//
+// Fallback path: the legacy browser-side CORS-proxy approach, kept only for
+// when the serverless function is unreachable (e.g. serving the built app from
+// a plain static server). It is slow (sequential with delays to stay under
+// proxy rate limits) — the API path should always win when available.
 
 export interface PriceFetchOutcome {
   ticker: string;
@@ -19,6 +24,7 @@ export interface PriceResult {
   outcomes: PriceFetchOutcome[];
 }
 
+const API_TIMEOUT_MS = 15000;
 const FETCH_TIMEOUT_MS = 6000;
 const DELAY_BETWEEN_FETCHES_MS = 2500;
 const RETRY_DELAY_MS = 2000;
@@ -27,7 +33,8 @@ const RETRY_DELAY_MS = 2000;
 // quotable symbols. These are silently skipped (not reported as failures).
 const SKIP_TICKERS = new Set(['CASH', 'MONEY MARKET', 'MM', 'HYS', 'SAVINGS', 'CHECKING', 'CD']);
 
-// Real fund/ETF symbols: letters (optionally with . or -), no spaces, max 10 chars.
+// Real symbols: letters (optionally with . or -), no spaces, max 10 chars.
+// Covers funds (AEPGX), ETFs (SPY) and crypto pairs (ETH-USD).
 function isFetchable(ticker: string): boolean {
   return !SKIP_TICKERS.has(ticker) && /^[A-Z][A-Z0-9.\-]{0,9}$/.test(ticker);
 }
@@ -42,6 +49,62 @@ function round2(n: unknown): number | null {
   }
   return null;
 }
+
+// ─── Primary path: /api/tickers ────────────────────────────────────────────────
+
+// Returns null when the endpoint itself is unavailable (network error, HTTP
+// error, unexpected shape) so the caller can fall back to the proxy path. A
+// reachable endpoint that reports per-symbol failures is trusted as-is.
+async function fetchViaApi(tickers: string[]): Promise<PriceResult | null> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
+  try {
+    const res = await fetch(`/api/tickers?symbols=${encodeURIComponent(tickers.join(','))}`, {
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      console.warn(`[prices] /api/tickers unavailable: HTTP ${res.status} ${res.statusText}`);
+      return null;
+    }
+    const json = await res.json();
+    const rows: unknown = json?.tickers;
+    if (!Array.isArray(rows)) {
+      console.warn('[prices] /api/tickers returned unexpected shape');
+      return null;
+    }
+    const bySymbol = new Map<string, { ok?: boolean; price?: unknown; error?: unknown }>();
+    for (const row of rows) {
+      if (row && typeof row === 'object' && typeof (row as { symbol?: unknown }).symbol === 'string') {
+        bySymbol.set((row as { symbol: string }).symbol.toUpperCase(), row as { ok?: boolean; price?: unknown; error?: unknown });
+      }
+    }
+    const prices: Record<string, number> = {};
+    const failed: string[] = [];
+    const outcomes: PriceFetchOutcome[] = [];
+    for (const t of tickers) {
+      const row = bySymbol.get(t);
+      const price = row?.ok ? round2(row.price) : null;
+      if (price != null) {
+        prices[t] = price;
+        outcomes.push({ ticker: t, price, source: 'api', errors: [] });
+      } else {
+        const reason = typeof row?.error === 'string' ? row.error : row ? 'no price in response' : 'symbol missing from response';
+        failed.push(t);
+        outcomes.push({ ticker: t, price: null, source: null, errors: [`api: ${reason}`] });
+        console.warn(`[prices] /api/tickers could not resolve ${t}: ${reason}`);
+      }
+    }
+    return { prices, failed, skipped: [], outcomes };
+  } catch (e) {
+    const reason = e instanceof Error ? (e.name === 'AbortError' ? 'timeout' : `${e.name}: ${e.message}`) : String(e);
+    console.warn(`[prices] /api/tickers unavailable: ${reason}`);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
+// ─── Fallback path: direct + CORS proxies from the browser ─────────────────────
 
 // US mutual funds: 5-letter symbols ending in X (AEPGX, ANEFX, DODBX). Used to
 // decide whether the Google Finance :MUTF fallback applies.
@@ -190,7 +253,7 @@ async function attemptAll(ticker: string, errors: string[]): Promise<PriceFetchO
   return null;
 }
 
-async function fetchOne(ticker: string): Promise<PriceFetchOutcome> {
+async function fetchOneViaProxies(ticker: string): Promise<PriceFetchOutcome> {
   const errors: string[] = [];
   const first = await attemptAll(ticker, errors);
   if (first) return first;
@@ -203,20 +266,14 @@ async function fetchOne(ticker: string): Promise<PriceFetchOutcome> {
   return { ticker, price: null, source: null, errors };
 }
 
-export async function fetchPrices(tickers: string[]): Promise<PriceResult> {
-  const unique = Array.from(
-    new Set(tickers.map((t) => t.trim().toUpperCase()).filter(Boolean)),
-  );
-  const skipped = unique.filter((t) => !isFetchable(t));
-  const fetchable = unique.filter(isFetchable);
-  if (skipped.length) console.debug(`[prices] skipping non-ticker holdings: ${skipped.join(', ')}`);
+async function fetchViaProxies(fetchable: string[]): Promise<PriceResult> {
   // Sequential with a pause between each ticker: the public CORS proxies
   // rate-limit even back-to-back requests, which surfaces as one (rotating)
   // ticker failing while the others succeed. The delay keeps us under the limit.
   const outcomes: PriceFetchOutcome[] = [];
   for (let i = 0; i < fetchable.length; i++) {
     if (i > 0) await sleep(DELAY_BETWEEN_FETCHES_MS);
-    outcomes.push(await fetchOne(fetchable[i]));
+    outcomes.push(await fetchOneViaProxies(fetchable[i]));
   }
   const prices: Record<string, number> = {};
   const failed: string[] = [];
@@ -224,5 +281,23 @@ export async function fetchPrices(tickers: string[]): Promise<PriceResult> {
     if (o.price != null) prices[o.ticker] = o.price;
     else failed.push(o.ticker);
   }
-  return { prices, failed, skipped, outcomes };
+  return { prices, failed, skipped: [], outcomes };
+}
+
+// ─── Public API ────────────────────────────────────────────────────────────────
+
+export async function fetchPrices(tickers: string[]): Promise<PriceResult> {
+  const unique = Array.from(
+    new Set(tickers.map((t) => t.trim().toUpperCase()).filter(Boolean)),
+  );
+  const skipped = unique.filter((t) => !isFetchable(t));
+  const fetchable = unique.filter(isFetchable);
+  if (skipped.length) console.debug(`[prices] skipping non-ticker holdings: ${skipped.join(', ')}`);
+  if (fetchable.length === 0) {
+    return { prices: {}, failed: [], skipped, outcomes: [] };
+  }
+
+  const viaApi = await fetchViaApi(fetchable);
+  const result = viaApi ?? await fetchViaProxies(fetchable);
+  return { ...result, skipped };
 }

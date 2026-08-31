@@ -162,9 +162,18 @@ export interface FundHolding {
   shares: number;
   price: number;
   costBasis: number;
+  // Optional label shown in place of the ticker (display privacy only — the
+  // ticker is still used for price fetching and remains visible when editing).
+  displayName?: string;
   // Muted holdings stay in the list (and still get price refreshes) but are
   // excluded from account totals and everything downstream of them.
   muted?: boolean;
+}
+
+// What to show for a holding: display name when set, otherwise the ticker.
+export function holdingLabel(h: FundHolding): string {
+  const dn = h.displayName?.trim();
+  return dn ? dn : h.ticker;
 }
 
 // Investment accounts that support a holdings sub-table in the NetWorth view.
