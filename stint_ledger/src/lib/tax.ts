@@ -73,3 +73,15 @@ export function estimateTaxes(grossAnnual: number) {
     netMonthly: (grossAnnual - totalTax) / 12,
   };
 }
+
+// Long-term capital gains on taxable brokerage sales: 15% federal bracket plus
+// NY, which taxes capital gains as ordinary income (same simplified flat rate
+// used above). Used to estimate the after-tax value of the brokerage account.
+export const LTCG_FEDERAL_RATE = 0.15;
+export const LTCG_RATE = LTCG_FEDERAL_RATE + NY_STATE_RATE; // 0.22
+
+// Tax owed if net unrealized gains were realized today. Losses offset gains,
+// but a net loss produces no refund here, so the input is floored at zero.
+export function estimateLtcgTax(netUnrealizedGains: number): number {
+  return Math.max(0, netUnrealizedGains) * LTCG_RATE;
+}

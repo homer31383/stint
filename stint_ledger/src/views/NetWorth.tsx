@@ -23,6 +23,7 @@ import { Panel } from '../components/Panel';
 import { MiniBar } from '../components/MiniBar';
 import { fmt, fmtPct } from '../lib/helpers';
 import { fetchPrices } from '../lib/prices';
+import { estimateLtcgTax, LTCG_RATE } from '../lib/tax';
 
 const HOLDINGS_KEY_SET = new Set<FixedAccountKey>(HOLDINGS_ENABLED_KEYS);
 function isHoldingsKey(key: FixedAccountKey): key is HoldingsAccountKey {
@@ -420,6 +421,17 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
   const accessibleNW = balances.checking + balances.hys + balances.moneyMarket + balances.brokerage + balances.ccDebt;
   const retirementNW = balances.tradIRA + balances.rolloverIRA + balances.hsa;
 
+  // After-tax accessible: what the accessible pile is worth once the brokerage
+  // account's unrealized gains are taxed at the long-term capital gains rate.
+  // Only the taxable brokerage account counts; retirement accounts are excluded.
+  // Gains and losses across active holdings net against each other, floored at
+  // zero for the tax calc. If the whole account is muted, or has no holdings
+  // (manual balance only), there is nothing to tax.
+  const brokerageHoldings = muted.has('nonRetirement') ? [] : (detailed.holdings?.nonRetirement ?? []);
+  const netUnrealizedGains = holdingsTotal(brokerageHoldings) - holdingsCostBasisTotal(brokerageHoldings);
+  const estLtcgTax = estimateLtcgTax(netUnrealizedGains);
+  const afterTaxAccessible = accessibleNW - estLtcgTax;
+
   const fixedAssets = ALL_FIXED_KEYS.reduce((s, k) => {
     if (muted.has(k)) return s;
     const v = fixedValue(detailed, k);
@@ -503,9 +515,20 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
       )}
 
       {/* Summary stats */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
         <StatCard label="Total Net Worth" value={fmt(totalNW)} color="text-positive" />
         <StatCard label="Accessible" value={fmt(accessibleNW)} />
+        <StatCard
+          label="After-Tax Accessible"
+          value={fmt(afterTaxAccessible)}
+          sub={
+            estLtcgTax > 0
+              ? `−${fmt(estLtcgTax)} est. tax on ${fmt(netUnrealizedGains)} gains (${Math.round(LTCG_RATE * 100)}% LTCG)`
+              : netUnrealizedGains < 0
+                ? `No tax: ${fmt(Math.abs(netUnrealizedGains))} net unrealized loss`
+                : 'No unrealized brokerage gains'
+          }
+        />
         <StatCard label="Retirement" value={fmt(retirementNW)} color="text-retirement" />
         <StatCard label="Debt-to-Asset" value={fmtPct(debtToAsset, 1)} color={debtToAsset < 0.05 ? 'text-positive' : 'text-caution'} />
       </div>

@@ -19,7 +19,7 @@ import type { ExpenseModel, RecurringExpense, OneTimeExpense } from '../hooks/us
 import type { PlannerSettings } from '../hooks/usePlannerSettings';
 import type { RetirementSettings } from '../hooks/useRetirementSettings';
 import type { SavedScenario } from '../hooks/useSavedScenarios';
-import { estimateTaxes, estimateW2Taxes } from './tax';
+import { estimateTaxes, estimateW2Taxes, estimateLtcgTax, LTCG_RATE } from './tax';
 import { weekdaysElapsedYTD, currentYear, monthName } from './helpers';
 
 export interface BriefingInput {
@@ -174,8 +174,25 @@ function buildFinancialPosition(input: BriefingInput): string {
   const accessibleNW = balances.checking + balances.hys + balances.moneyMarket + balances.brokerage + balances.ccDebt;
   const retirementNW = balances.tradIRA + balances.rolloverIRA + balances.hsa;
 
+  // After-tax accessible: taxable brokerage gains (net of losses across active
+  // holdings, floored at zero) taxed at the long-term capital gains rate.
+  // Retirement accounts are excluded. A muted account or a manual-only balance
+  // (no holdings) produces no taxable gain.
+  const brokerageHoldings = muted.has('nonRetirement') ? [] : (detailed.holdings?.nonRetirement ?? []);
+  const netUnrealizedGains = holdingsTotal(brokerageHoldings) - holdingsCostBasisTotal(brokerageHoldings);
+  const estLtcgTax = estimateLtcgTax(netUnrealizedGains);
+  const afterTaxAccessible = accessibleNW - estLtcgTax;
+  const ltcgPct = Math.round(LTCG_RATE * 100);
+  const afterTaxNote =
+    estLtcgTax > 0
+      ? `*(accessible − ${m$(estLtcgTax)} est. ${ltcgPct}% LTCG tax on ${m$(netUnrealizedGains)} net unrealized brokerage gains)*`
+      : netUnrealizedGains < 0
+        ? `*(no tax: ${m$(Math.abs(netUnrealizedGains))} net unrealized brokerage loss)*`
+        : '*(no unrealized brokerage gains)*';
+
   out.push(`**Total Net Worth:** ${m$(totalNW)}`);
   out.push(`**Accessible Net Worth:** ${m$(accessibleNW)}  *(checking + savings + brokerage − debt)*`);
+  out.push(`**After-Tax Accessible:** ${m$(afterTaxAccessible)}  ${afterTaxNote}`);
   out.push(`**Retirement Net Worth:** ${m$(retirementNW)}`);
 
   // Account breakdown
