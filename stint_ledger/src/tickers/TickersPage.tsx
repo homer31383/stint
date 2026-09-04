@@ -123,6 +123,36 @@ function isIndexSymbol(s: string): boolean {
   return s.startsWith('^');
 }
 
+// Cash indexes only trade during regular hours. Outside them the overnight
+// signal is the matching futures contract (nearly 24h), so the four index
+// rows swap to futures data while the market is closed. These symbols are
+// fetched alongside the 1D request but never join the editable watchlist.
+const FUTURES_FOR: Record<string, string> = {
+  '^GSPC': 'ES=F',
+  '^DJI': 'YM=F',
+  '^IXIC': 'NQ=F',
+  '^RUT': 'RTY=F',
+};
+
+function withFutures(symbols: string[]): string[] {
+  const out = [...symbols];
+  for (const s of symbols) {
+    const fut = FUTURES_FOR[s];
+    if (fut && !out.includes(fut)) out.push(fut);
+  }
+  return out;
+}
+
+// Closed (or pre/post market) detection for a 1D row. Yahoo's chart meta
+// usually omits marketState, so when it is missing the row counts as closed
+// once its last regular trade is more than 15 minutes old; weekends and
+// holidays fall out of that naturally.
+function isMarketClosed(row: TickerRow): boolean {
+  if (row.marketState) return row.marketState !== 'REGULAR';
+  if (row.asOf == null) return false;
+  return Date.now() / 1000 - row.asOf > 15 * 60;
+}
+
 // Display rule: indexes first, then everything else, each in watchlist order.
 function grouped(list: string[]): string[] {
   return [...list.filter(isIndexSymbol), ...list.filter((s) => !isIndexSymbol(s))];
@@ -248,12 +278,34 @@ function NewsLink({ name, symbol }: { name?: string; symbol: string }) {
 // ticker symbol the secondary one. Rows with no name yet (still loading, or
 // symbols Yahoo returns nameless) promote the symbol to the top line. The
 // news button rides the symbol line in view rows; edit rows omit it.
-function RowTitle({ name, symbol, news = false }: { name?: string; symbol: string; news?: boolean }) {
+function RowTitle({ name, symbol, news = false, symbolLabel, tag }: {
+  name?: string;
+  symbol: string;
+  news?: boolean;
+  symbolLabel?: string; // replaces the symbol line text (e.g. "ES=F · futures")
+  tag?: string; // small uppercase marker beside the symbol line (e.g. "FUT")
+}) {
   const newsLink = news ? <NewsLink name={name} symbol={symbol} /> : null;
+  const tagEl = tag ? (
+    <span
+      className="font-mono uppercase rounded"
+      style={{
+        color: TEXT_DIM,
+        border: `1px solid ${STONE}`,
+        fontSize: 8,
+        letterSpacing: '0.12em',
+        lineHeight: 1,
+        padding: '2px 3px 1px',
+      }}
+    >
+      {tag}
+    </span>
+  ) : null;
   if (!name) {
     return (
       <div className="flex-1 min-w-0 flex items-center gap-1.5">
-        <span className="text-sm font-semibold truncate" style={{ color: TEXT }}>{symbol}</span>
+        <span className="text-sm font-semibold truncate" style={{ color: TEXT }}>{symbolLabel ?? symbol}</span>
+        {tagEl}
         {newsLink}
       </div>
     );
@@ -262,7 +314,8 @@ function RowTitle({ name, symbol, news = false }: { name?: string; symbol: strin
     <div className="flex-1 min-w-0">
       <div className="text-sm font-semibold truncate" style={{ color: TEXT }}>{name}</div>
       <div className="flex items-center gap-1.5">
-        <span className="font-mono text-xs" style={{ color: TEXT_DIM }}>{symbol}</span>
+        <span className="font-mono text-xs" style={{ color: TEXT_DIM }}>{symbolLabel ?? symbol}</span>
+        {tagEl}
         {newsLink}
       </div>
     </div>
@@ -288,18 +341,19 @@ const cardStyle = (shadow: string = CARD_SHADOW): React.CSSProperties => ({
 });
 
 // Expanded detail: a larger sparkline plus the row's numbers in a light grid.
-function DetailPanel({ row, change, is1D, band, colorScale }: {
+function DetailPanel({ row, change, is1D, band, colorScale, futures = false }: {
   row: TickerRow;
   change: { pct: number; series: number[]; ref: number };
   is1D: boolean;
   band: number;
   colorScale: number;
+  futures?: boolean;
 }) {
   const { pct, series, ref } = change;
   const closes = row.closes ?? [];
   const stats: Array<{ label: string; value: string; color?: string }> = [
     { label: 'Price', value: fmtPrice(row.price!) },
-    { label: is1D ? 'Prev close' : 'Period start', value: fmtPrice(ref) },
+    { label: is1D ? (futures ? 'Prev settle' : 'Prev close') : 'Period start', value: fmtPrice(ref) },
     { label: 'Change', value: `${pct >= 0 ? '+' : '-'}${fmtPrice(Math.abs(row.price! - ref))}`, color: signColor(pct) },
   ];
   if (closes.length > 0) {
@@ -308,7 +362,7 @@ function DetailPanel({ row, change, is1D, band, colorScale }: {
       { label: 'Low', value: fmtPrice(Math.min(...closes)) },
     );
   }
-  if (is1D && row.afterHoursPct != null && row.afterHoursPrice != null) {
+  if (is1D && !futures && row.afterHoursPct != null && row.afterHoursPrice != null) {
     stats.push({
       label: 'After hours',
       value: `☾ ${fmtPrice(row.afterHoursPrice)} (${fmtPct(row.afterHoursPct)})`,
@@ -354,6 +408,9 @@ function DetailPanel({ row, change, is1D, band, colorScale }: {
 interface RowProps {
   symbol: string;
   row: TickerRow | undefined;
+  // When set, this futures contract's data is shown in place of the cash
+  // index while the market is closed. The row keeps the index's identity.
+  fut?: TickerRow;
   timeframe: Timeframe;
   band: number;
   colorScale: number; // color denominator: band on 1D, biggest mover otherwise
@@ -393,6 +450,7 @@ const LONG_PRESS_SLOP_PX = 10;
 function Row({
   symbol,
   row,
+  fut,
   timeframe,
   band,
   colorScale,
@@ -404,7 +462,12 @@ function Row({
   onLongPress,
 }: RowProps) {
   const is1D = timeframe === '1D';
-  const change = row ? changeFor(row, is1D) : null;
+  // Numbers and sparkline come from the futures contract when one is shown;
+  // the name, news link and select identity stay with the cash index.
+  const shown = fut ?? row;
+  const change = shown ? changeFor(shown, is1D) : null;
+  const symbolLabel = fut ? `${fut.symbol} · futures` : undefined;
+  const tag = fut ? 'FUT' : undefined;
 
   // Long-press enters select mode; a short press keeps its old meaning
   // (expand/collapse, or toggle selection once in select mode). The fired
@@ -452,12 +515,12 @@ function Row({
   // switch (which clears every row) re-renders in place without the list
   // jumping under a scrolled reader. They carry no checkbox: a row without a
   // usable change cannot be investigated.
-  if (!row || !change) {
+  if (!shown || !change) {
     return (
       <div className="flex items-center gap-3 mb-2.5 px-3.5 py-3" style={{ ...cardStyle(), minHeight: 72, opacity: selectMode ? 0.55 : 1 }}>
         <RowTitle name={row?.name} symbol={symbol} news />
-        <div className="text-right shrink-0 text-sm italic" style={{ color: row ? LOSS_TEXT : TEXT_DIM }}>
-          {row ? 'Unavailable' : '...'}
+        <div className="text-right shrink-0 text-sm italic" style={{ color: shown ? LOSS_TEXT : TEXT_DIM }}>
+          {shown ? 'Unavailable' : '...'}
         </div>
         <TickerSparkline series={[]} changePct={0} mode={is1D ? 'band' : 'auto'} band={band} colorScale={colorScale} />
       </div>
@@ -508,14 +571,14 @@ function Row({
     >
       <div className="flex items-center gap-3" style={{ minHeight: 48 }}>
         {selectMode && <SelectCheck checked={selected} />}
-        <RowTitle name={row.name} symbol={row.symbol} news />
+        <RowTitle name={row?.name} symbol={symbol} news symbolLabel={symbolLabel} tag={tag} />
         <div className="shrink-0 flex flex-col items-end gap-0.5">
           {/* Percent change is the primary number, price is secondary. */}
           <Pill pct={pct} scale={colorScale} pinned={pinned} />
-          <div className="font-mono text-xs" style={{ color: TEXT_DIM }}>{fmtPrice(row.price!)}</div>
-          {is1D && row.afterHoursPct != null && (
-            <div className="font-mono" style={{ color: signColor(row.afterHoursPct), fontSize: 10 }}>
-              {'☾'} {fmtPct(row.afterHoursPct)}
+          <div className="font-mono text-xs" style={{ color: TEXT_DIM }}>{fmtPrice(shown.price!)}</div>
+          {is1D && !fut && shown.afterHoursPct != null && (
+            <div className="font-mono" style={{ color: signColor(shown.afterHoursPct), fontSize: 10 }}>
+              {'☾'} {fmtPct(shown.afterHoursPct)}
             </div>
           )}
         </div>
@@ -528,7 +591,7 @@ function Row({
         />
       </div>
       {expanded && !selectMode && (
-        <DetailPanel row={row} change={change} is1D={is1D} band={band} colorScale={colorScale} />
+        <DetailPanel row={shown} change={change} is1D={is1D} band={band} colorScale={colorScale} futures={!!fut} />
       )}
     </div>
   );
@@ -747,9 +810,13 @@ export default function TickersPage() {
 
   const load = useCallback(async (symbols: string[], tf: Timeframe) => {
     if (symbols.length === 0) return;
+    // On 1D the index futures ride along in the same request so a closed
+    // market can swap them in without a second round trip or a flash of
+    // stale cash data. Longer ranges show the cash index history as is.
+    const fetchList = tf === '1D' ? withFutures(symbols) : symbols;
     try {
       const res = await fetch(
-        `/api/tickers?symbols=${encodeURIComponent(symbols.join(','))}&range=${encodeURIComponent(tf)}`,
+        `/api/tickers?symbols=${encodeURIComponent(fetchList.join(','))}&range=${encodeURIComponent(tf)}`,
       );
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const json = await res.json();
@@ -849,19 +916,14 @@ export default function TickersPage() {
   }
 
   // Header label. On 1D: one session label for the equity rows, taken from
-  // the first index; Yahoo's chart meta usually omits marketState, so when
-  // it is missing we treat the market as closed once the last trade (asOf)
-  // is more than 15 minutes old, and weekends and holidays fall out of that
-  // naturally. On longer timeframes: the period name.
+  // the first index (see isMarketClosed). The same flag drives the futures
+  // swap on the index rows. On longer timeframes: the period name.
   let headerLabel: string | null = PERIOD_LABELS[timeframe];
+  let marketClosed = false;
   if (is1D) {
     const firstOk = displayList.map((s) => rowsBySymbol[s]).find((r) => r?.ok && r.asOf != null);
-    const isClosed = firstOk
-      ? firstOk.marketState
-        ? firstOk.marketState !== 'REGULAR'
-        : Date.now() / 1000 - firstOk.asOf! > 15 * 60
-      : false;
-    headerLabel = isClosed
+    marketClosed = firstOk ? isMarketClosed(firstOk) : false;
+    headerLabel = marketClosed
       ? `Closed · showing ${new Date(firstOk!.asOf! * 1000).toLocaleDateString('en-US', {
           weekday: 'short',
           month: 'short',
@@ -933,18 +995,32 @@ export default function TickersPage() {
     [startCooldown],
   );
 
+  // The futures row to show in place of an index symbol: only on 1D, only
+  // while the market is closed, and only when the contract actually loaded.
+  // Otherwise the cash index shows as usual.
+  const futuresFor = useCallback(
+    (s: string): TickerRow | undefined => {
+      if (!is1D || !marketClosed) return undefined;
+      const futSym = FUTURES_FOR[s];
+      const fut = futSym ? rowsBySymbol[futSym] : undefined;
+      return fut?.ok ? fut : undefined;
+    },
+    [is1D, marketClosed, rowsBySymbol],
+  );
+
   const investigateSelected = useCallback(() => {
     const assets: InvestigateAsset[] = [];
     for (const s of selectedSymbols) {
-      const r = rowsBySymbol[s];
+      // Investigate the move the row is showing: futures while closed.
+      const r = futuresFor(s) ?? rowsBySymbol[s];
       const c = r ? changeFor(r, is1D) : null;
-      if (c) assets.push({ symbol: s, name: r!.name, pct: c.pct, pctLabel: fmtPct(c.pct) });
+      if (c) assets.push({ symbol: s, name: rowsBySymbol[s]?.name ?? r!.name, pct: c.pct, pctLabel: fmtPct(c.pct) });
     }
     if (assets.length === 0) return;
     // Launching clears the selection; the panel keeps its own snapshot.
     exitSelectMode();
     runInvestigation(assets, timeframe);
-  }, [selectedSymbols, rowsBySymbol, is1D, timeframe, exitSelectMode, runInvestigation]);
+  }, [selectedSymbols, rowsBySymbol, futuresFor, is1D, timeframe, exitSelectMode, runInvestigation]);
 
   const renderRow = (s: string) => (
     <Row
@@ -954,6 +1030,7 @@ export default function TickersPage() {
       band={band}
       colorScale={colorScale}
       row={rowsBySymbol[s] ?? (loadedOnce ? { symbol: s, ok: false } : undefined)}
+      fut={futuresFor(s)}
       expanded={expanded === s}
       onToggle={() => toggleExpanded(s)}
       selectMode={selectMode}
