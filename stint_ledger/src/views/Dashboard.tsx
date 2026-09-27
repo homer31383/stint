@@ -4,7 +4,7 @@ import { StatCard } from '../components/StatCard';
 import { Panel } from '../components/Panel';
 import { StatusTag } from '../components/StatusTag';
 import { PageTitle, Note } from '../components/Ink';
-import { fmt, fmtPct, fmtDateShort, currentYear, weekdaysElapsedYTD, monthName } from '../lib/helpers';
+import { fmt, fmtPct, fmtCompact, fmtDateShort, currentYear, weekdaysElapsedYTD, monthName } from '../lib/helpers';
 
 interface Props {
   data: StintData;
@@ -76,6 +76,8 @@ export function Dashboard({ data, balances, monthlyExpenses }: Props) {
   }, [data, balances, monthlyExpenses, year]);
 
   const maxMonthly = Math.max(...stats.monthlyIncome, 1);
+  // Reference line: average over the months elapsed so far this year
+  const avgMonthly = stats.ytdIncome / (new Date().getMonth() + 1);
 
   // Margin note, data-driven only: the latest complete month is the year's best
   const currentMonth = new Date().getMonth();
@@ -120,33 +122,48 @@ export function Dashboard({ data, balances, monthlyExpenses }: Props) {
 
       {/* Monthly income chart */}
       <Panel title="Monthly Income (YTD)" tape="fern">
-        <div className="relative flex items-end gap-1.5 h-32 pt-5">
+        <div className="relative pt-6">
           {bestMonthYet && (
             <Note
-              className="absolute top-0 pr-1"
+              className="absolute -top-1 pr-1"
               style={{ left: `${(lastComplete / 12) * 100}%`, transform: 'translateX(-100%) rotate(-3deg)' }}
             >
               best month yet →
             </Note>
           )}
-          {stats.monthlyIncome.map((v, i) => {
-            const fill = i === currentMonth
-              ? 'bg-forest'
-              : bestMonthYet && i === lastComplete
-                ? 'bg-fern'
-                : 'bg-[#b8ad92]';
-            return (
-              <div key={i} className="pbar-col flex-1 flex flex-col items-center gap-1">
-                <div className="w-full flex flex-col justify-end h-24">
-                  <div
-                    className={`pbar ${fill}`}
-                    style={{ height: `${(v / maxMonthly) * 100}%`, minHeight: v > 0 ? 2 : 0, '--b': i } as React.CSSProperties}
-                  />
-                </div>
-                <span className="text-[10px] font-mono text-ink-dim">{monthName(i).charAt(0)}</span>
+          <div className="relative flex items-end gap-1.5 h-24 pr-9">
+            {avgMonthly > 0 && (
+              <div className="ref-line" style={{ bottom: `${Math.min(100, (avgMonthly / maxMonthly) * 100)}%` }}>
+                <span className="ref-tag">avg {fmtCompact(avgMonthly)}</span>
               </div>
-            );
-          })}
+            )}
+            {stats.monthlyIncome.map((v, i) => {
+              const pct = (v / maxMonthly) * 100;
+              const isBest = bestMonthYet && i === lastComplete;
+              const fill = i === currentMonth ? 'bg-forest' : isBest ? 'bg-fern' : 'bg-[#b8ad92]';
+              return (
+                <div
+                  key={i}
+                  className="pbar-col relative flex-1 h-full flex flex-col justify-end"
+                  style={{ '--b': i } as React.CSSProperties}
+                >
+                  {v > 0 && (
+                    <>
+                      <div className={`pbar ${fill}`} style={{ height: `${pct}%`, minHeight: 2 }} />
+                      <span className={`bar-label ${isBest ? 'best' : ''}`} style={{ bottom: `calc(${pct}% + 3px)` }}>
+                        {fmtCompact(v)}
+                      </span>
+                    </>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div className="flex gap-1.5 mt-1 pr-9">
+            {stats.monthlyIncome.map((_, i) => (
+              <span key={i} className="flex-1 text-center text-[10px] font-mono text-ink-dim">{monthName(i).charAt(0)}</span>
+            ))}
+          </div>
         </div>
       </Panel>
 

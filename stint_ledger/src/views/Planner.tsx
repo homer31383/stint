@@ -7,7 +7,7 @@ import { HandCheck } from '../components/HandCheck';
 import { PageTitle, Note } from '../components/Ink';
 import { estimateTaxes, estimateW2Taxes } from '../lib/tax';
 import { CD_DAY_RATE, SHOOT_SUP_RATE } from '../lib/rates';
-import { fmt, fmtPct, currentYear, weekdaysElapsedYTD, weekdaysBetween } from '../lib/helpers';
+import { fmt, fmtPct, fmtCompact, currentYear, weekdaysElapsedYTD, weekdaysBetween } from '../lib/helpers';
 import { usePlannerSettings, migrateLegacyExpenses } from '../hooks/usePlannerSettings';
 import type { PlannerSettings } from '../hooks/usePlannerSettings';
 import { useExpenseModel } from '../hooks/useExpenseModel';
@@ -1061,21 +1061,38 @@ export function Planner({ data, balances }: Props) {
 
       {/* 5-Year Net Worth Projection */}
       <Panel title="5-Year Net Worth Projection" tape="kraft" tapeSide="right">
-        <div className="flex items-end gap-3 h-48 mb-4">
-          {projection.map((p, bi) => {
-            const accPct = (p.accessible / projMax) * 100;
-            const retPct = (p.retirement / projMax) * 100;
-            const barVar = { '--b': bi } as React.CSSProperties;
-            return (
-              <div key={p.year} className="pbar-col flex-1 flex flex-col items-center gap-1">
-                <div className="w-full flex flex-col justify-end h-40">
-                  <div className="pbar pbar-stack bg-kraft" style={{ height: `${retPct}%`, ...barVar }} />
-                  <div className="pbar pbar-stack bg-forest" style={{ height: `${accPct}%`, ...barVar }} />
+        <div className="pt-4 mb-4">
+          <div className="flex items-end gap-3 h-40">
+            {projection.map((p, bi) => {
+              const accPct = (p.accessible / projMax) * 100;
+              const retPct = (p.retirement / projMax) * 100;
+              // Segment labels only where the segment is tall enough (chart is 160px)
+              const accPx = (accPct / 100) * 160;
+              const retPx = (retPct / 100) * 160;
+              return (
+                <div
+                  key={p.year}
+                  className="pbar-col relative flex-1 h-full flex flex-col justify-end"
+                  style={{ '--b': bi } as React.CSSProperties}
+                >
+                  <div className="pbar pbar-stack bg-kraft relative" style={{ height: `${retPct}%` }}>
+                    {retPx >= 24 && <span className="seg-label text-ink">{fmtCompact(p.retirement)}</span>}
+                  </div>
+                  <div className="pbar pbar-stack bg-forest relative" style={{ height: `${accPct}%` }}>
+                    {accPx >= 24 && <span className="seg-label text-paper">{fmtCompact(p.accessible)}</span>}
+                  </div>
+                  <span className="bar-label total" style={{ bottom: `calc(${accPct + retPct}% + 3px)` }}>
+                    {fmtCompact(p.total)}
+                  </span>
                 </div>
-                <span className="text-[10px] text-ink-dim font-mono">{p.year}</span>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+          <div className="flex gap-3 mt-1">
+            {projection.map((p, bi) => (
+              <span key={p.year} className="flex-1 text-center text-[10px] text-ink-dim font-mono">{bi === 0 ? 'now' : p.year}</span>
+            ))}
+          </div>
         </div>
         <div className="flex gap-4 text-xs font-mono text-ink-dim mb-4">
           <span className="flex items-center gap-1"><span className="w-3 h-3 bg-forest rounded-sm" /> Accessible</span>

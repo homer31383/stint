@@ -6,6 +6,16 @@ export function fmt(n: number): string {
   return `$${formatted}`;
 }
 
+// Compact figure for chart labels: 840, 1.4k, 8.4k, 12k, 1.9M
+export function fmtCompact(n: number): string {
+  const abs = Math.abs(n);
+  const sign = n < 0 ? '\u2212' : '';
+  if (abs >= 1e6) return `${sign}${(abs / 1e6).toFixed(1).replace(/\.0$/, '')}M`;
+  if (abs >= 1e4) return `${sign}${Math.round(abs / 1e3)}k`;
+  if (abs >= 1e3) return `${sign}${(abs / 1e3).toFixed(1)}k`;
+  return `${sign}${Math.round(abs)}`;
+}
+
 // Format percentage
 export function fmtPct(n: number, decimals = 0): string {
   return `${(n * 100).toFixed(decimals)}%`;

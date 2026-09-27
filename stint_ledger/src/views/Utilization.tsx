@@ -4,7 +4,7 @@ import { StatCard } from '../components/StatCard';
 import { Panel } from '../components/Panel';
 import { MiniBar } from '../components/MiniBar';
 import { PageTitle } from '../components/Ink';
-import { fmt, fmtPct, currentYear, weekdaysElapsedYTD, monthName } from '../lib/helpers';
+import { fmt, fmtPct, fmtCompact, currentYear, weekdaysElapsedYTD, monthName } from '../lib/helpers';
 
 interface Props {
   data: StintData;
@@ -117,7 +117,7 @@ export function Utilization({ data }: Props) {
                   <td className="text-right text-ink-3">{m.days}</td>
                   <td className="text-right text-ink-3">{fmtPct(m.utilization)}</td>
                   <td className="pl-3">
-                    <MiniBar value={m.income} max={maxMonthlyIncome} />
+                    <MiniBar value={m.income} max={maxMonthlyIncome} label={fmtCompact(m.income)} />
                   </td>
                 </tr>
               ))}

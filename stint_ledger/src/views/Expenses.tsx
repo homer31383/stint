@@ -4,7 +4,7 @@ import { StatCard } from '../components/StatCard';
 import { Panel } from '../components/Panel';
 import { HandCheck } from '../components/HandCheck';
 import { PageTitle } from '../components/Ink';
-import { fmt, currentYear, weekdaysElapsedYTD } from '../lib/helpers';
+import { fmt, fmtCompact, currentYear, weekdaysElapsedYTD } from '../lib/helpers';
 import { estimateTaxes, estimateW2Taxes } from '../lib/tax';
 import { CD_DAY_RATE } from '../lib/rates';
 import { useExpenseModel } from '../hooks/useExpenseModel';
@@ -783,33 +783,48 @@ export function Expenses({ data, balances }: Props) {
 
       {/* 6. Monthly Timeline */}
       <Panel title="Monthly Timeline" tape="clay" tapeSide="right">
-        <div className="flex items-end gap-1.5 h-40">
-          {monthlyTimeline.map((m, bi) => {
-            const recurringPct = maxMonthTotal > 0 ? (m.recurring / maxMonthTotal) * 100 : 0;
-            const oneTimePct = maxMonthTotal > 0 ? (m.oneTime / maxMonthTotal) * 100 : 0;
-            const barVar = { '--b': bi } as React.CSSProperties;
-            return (
-              <div key={m.label} className="pbar-col flex-1 flex flex-col items-center gap-1 h-full justify-end">
+        <div className="pt-4">
+          <div className="flex items-end gap-1.5 h-40">
+            {monthlyTimeline.map((m, bi) => {
+              const recurringPct = maxMonthTotal > 0 ? (m.recurring / maxMonthTotal) * 100 : 0;
+              const oneTimePct = maxMonthTotal > 0 ? (m.oneTime / maxMonthTotal) * 100 : 0;
+              const totalPct = recurringPct + oneTimePct;
+              return (
                 <div
-                  className="w-full flex flex-col justify-end"
-                  style={{ height: `${recurringPct + oneTimePct}%` }}
-                  title={`${m.label}: ${fmt(m.total)} (${fmt(m.recurring)} recurring${m.oneTime > 0 ? ` + ${fmt(m.oneTime)} one-time` : ''})`}
+                  key={m.label}
+                  className="pbar-col relative flex-1 h-full flex flex-col justify-end"
+                  style={{ '--b': bi } as React.CSSProperties}
                 >
-                  {m.oneTime > 0 && (
-                    <div
-                      className="pbar pbar-stack bg-pencil"
-                      style={{ height: `${(oneTimePct / (recurringPct + oneTimePct)) * 100}%`, minHeight: '2px', ...barVar }}
-                    />
-                  )}
                   <div
-                    className="pbar pbar-stack bg-clay"
-                    style={{ height: `${(recurringPct / (recurringPct + oneTimePct)) * 100}%`, minHeight: '2px', ...barVar }}
-                  />
+                    className="w-full flex flex-col justify-end"
+                    style={{ height: `${totalPct}%` }}
+                    title={`${m.label}: ${fmt(m.total)} (${fmt(m.recurring)} recurring${m.oneTime > 0 ? ` + ${fmt(m.oneTime)} one-time` : ''})`}
+                  >
+                    {m.oneTime > 0 && (
+                      <div
+                        className="pbar pbar-stack bg-pencil"
+                        style={{ height: `${(oneTimePct / totalPct) * 100}%`, minHeight: '2px' }}
+                      />
+                    )}
+                    <div
+                      className="pbar pbar-stack bg-clay"
+                      style={{ height: `${(recurringPct / totalPct) * 100}%`, minHeight: '2px' }}
+                    />
+                  </div>
+                  {m.total > 0 && (
+                    <span className={`bar-label ${m.oneTime > 0 ? 'best' : ''}`} style={{ bottom: `calc(${totalPct}% + 3px)` }}>
+                      {fmtCompact(m.total)}
+                    </span>
+                  )}
                 </div>
-                <span className="text-[10px] font-mono text-ink-dim">{m.label}</span>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+          <div className="flex gap-1.5 mt-1">
+            {monthlyTimeline.map((m) => (
+              <span key={m.label} className="flex-1 text-center text-[10px] font-mono text-ink-dim">{m.label}</span>
+            ))}
+          </div>
         </div>
         <div className="flex items-center gap-3 mt-3 text-[10px] font-mono text-ink-dim">
           <span className="flex items-center gap-1"><span className="w-3 h-2 bg-clay rounded-sm inline-block" /> Recurring</span>
