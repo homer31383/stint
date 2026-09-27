@@ -50,6 +50,12 @@ export function Expenses({ data, balances }: Props) {
     reset,
   } = useExpenseModel();
 
+  // Tap-to-expand editing: one row open at a time across both lists
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const toggleExpanded = useCallback((id: string) => {
+    setExpandedId(prev => (prev === id ? null : id));
+  }, []);
+
   // --- Drag-to-reorder state ---
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null);
@@ -597,15 +603,6 @@ export function Expenses({ data, balances }: Props) {
         </button>
       }>
         <div className="space-y-2">
-          <div className="hidden md:grid grid-cols-[24px_1fr_1fr_120px_28px_32px] gap-2 mono-label ledger-head pb-1 px-1">
-            <span />
-            <span>Category</span>
-            <span>Name</span>
-            <span className="text-right">Monthly</span>
-            <span />
-            <span />
-          </div>
-
           <div ref={listRef}>
             {model.recurring.map((r, i) => (
               <div
@@ -616,18 +613,20 @@ export function Expenses({ data, balances }: Props) {
                 onDragEnd={handleDragEnd}
                 onDragOver={(e) => handleDragOver(e, i)}
                 onDrop={(e) => handleDrop(e, i)}
-                className={`transition-all duration-150 ${
+                className={`ledger-row transition-all duration-150 ${
                   dragIndex === i ? 'opacity-40' : ''
                 } ${
                   dragOverIndex === i && dragIndex !== i
-                    ? 'border-t-2 border-accent'
+                    ? 'border-t-2 border-fern'
                     : 'border-t-2 border-transparent'
                 }`}
               >
                 <RecurringRow
                   expense={r}
+                  expanded={expandedId === r.id}
+                  onToggle={() => toggleExpanded(r.id)}
                   onUpdate={(updates) => updateRecurring(r.id, updates)}
-                  onRemove={() => removeRecurring(r.id)}
+                  onRemove={() => { removeRecurring(r.id); setExpandedId(null); }}
                   onTouchStart={(e) => handleTouchStart(e, i)}
                   onTouchMove={handleTouchMove}
                   onTouchEnd={handleTouchEnd}
@@ -658,22 +657,19 @@ export function Expenses({ data, balances }: Props) {
           <p className="text-xs text-ink-dim">No one-time expenses yet.</p>
         ) : (
           <div className="space-y-2">
-            <div className="hidden md:grid grid-cols-[80px_1fr_120px_28px_32px] gap-2 mono-label ledger-head pb-1 px-1">
-              <span>Month</span>
-              <span>Name</span>
-              <span className="text-right">Amount</span>
-              <span />
-              <span />
+            <div>
+              {sortedOneTime.map((e) => (
+                <div key={e.id} className="ledger-row">
+                  <OneTimeRow
+                    expense={e}
+                    expanded={expandedId === e.id}
+                    onToggle={() => toggleExpanded(e.id)}
+                    onUpdate={(updates) => updateOneTime(e.id, updates)}
+                    onRemove={() => { removeOneTime(e.id); setExpandedId(null); }}
+                  />
+                </div>
+              ))}
             </div>
-
-            {sortedOneTime.map((e) => (
-              <OneTimeRow
-                key={e.id}
-                expense={e}
-                onUpdate={(updates) => updateOneTime(e.id, updates)}
-                onRemove={() => removeOneTime(e.id)}
-              />
-            ))}
 
             <div className="ledger-total flex justify-between items-center pt-2 px-1">
               <span className="mono-label">Total one-time</span>
@@ -889,8 +885,66 @@ function BalanceCard({ label, current, projected, color, warn, danger }: {
 
 /* ---- Row components ---- */
 
-function RecurringRow({ expense, onUpdate, onRemove, onTouchStart, onTouchMove, onTouchEnd }: {
+// Compact two-zone rows: a collapsed line (mute, drag handle, category dot,
+// name, amount) that taps open into an inline editor. The name column takes
+// the slack (flex-1, min-w-0) and the amount never shrinks, so nothing clips
+// at phone widths.
+
+function DragHandle({ onTouchStart, onTouchMove, onTouchEnd }: {
+  onTouchStart?: (e: React.TouchEvent) => void;
+  onTouchMove?: (e: React.TouchEvent) => void;
+  onTouchEnd?: () => void;
+}) {
+  return (
+    <div
+      className="w-5 h-6 flex items-center justify-center flex-shrink-0 cursor-grab active:cursor-grabbing text-ink-dim hover:text-ink-3 touch-none select-none"
+      title="Drag to reorder"
+      onClick={(e) => e.stopPropagation()}
+      onTouchStart={onTouchStart}
+      onTouchMove={onTouchMove}
+      onTouchEnd={onTouchEnd}
+    >
+      <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
+        <rect x="2" y="2" width="8" height="1.5" rx="0.5" />
+        <rect x="2" y="5.25" width="8" height="1.5" rx="0.5" />
+        <rect x="2" y="8.5" width="8" height="1.5" rx="0.5" />
+      </svg>
+    </div>
+  );
+}
+
+function MuteButton({ muted, onToggle }: { muted: boolean; onToggle: () => void }) {
+  return (
+    <button
+      onClick={(e) => { e.stopPropagation(); onToggle(); }}
+      className={`w-6 h-6 flex items-center justify-center flex-shrink-0 text-sm rounded transition-colors ${muted ? 'text-ink-dim hover:text-ink-3' : 'text-ink-3 hover:text-ink'}`}
+      title={muted ? 'Unmute' : 'Mute'}
+    >
+      {muted ? '\u25cc' : '\u25c9'}
+    </button>
+  );
+}
+
+function RowEditor({ children, onRemove, onDone }: {
+  children: React.ReactNode;
+  onRemove: () => void;
+  onDone: () => void;
+}) {
+  return (
+    <div className="mx-1 mb-2 bg-paper2/70 rounded-sm p-3" style={{ borderTop: '1px dotted rgba(120,105,70,0.4)' }}>
+      <div className="grid grid-cols-2 gap-3">{children}</div>
+      <div className="flex items-center justify-between mt-3">
+        <button onClick={onRemove} className="btn-link clay">Delete</button>
+        <button onClick={onDone} className="btn-link fern">Done</button>
+      </div>
+    </div>
+  );
+}
+
+function RecurringRow({ expense, expanded, onToggle, onUpdate, onRemove, onTouchStart, onTouchMove, onTouchEnd }: {
   expense: RecurringExpense;
+  expanded: boolean;
+  onToggle: () => void;
   onUpdate: (updates: Partial<Omit<RecurringExpense, 'id'>>) => void;
   onRemove: () => void;
   onTouchStart?: (e: React.TouchEvent) => void;
@@ -900,111 +954,118 @@ function RecurringRow({ expense, onUpdate, onRemove, onTouchStart, onTouchMove, 
   const cat = getCategoryConfig(expense.category);
   const muted = !!expense.muted;
   return (
-    <div className={`grid grid-cols-[24px_1fr_1fr_120px_28px_32px] gap-2 items-center px-1 ${muted ? 'opacity-40' : ''}`}>
+    <div className={muted ? 'opacity-50' : ''}>
       <div
-        className="flex items-center justify-center cursor-grab active:cursor-grabbing text-ink-dim hover:text-ink-3 touch-none select-none"
-        title="Drag to reorder"
-        onTouchStart={onTouchStart}
-        onTouchMove={onTouchMove}
-        onTouchEnd={onTouchEnd}
+        className="flex items-center gap-2 px-1 py-2 cursor-pointer select-none"
+        onClick={onToggle}
+        title={expanded ? 'Collapse' : 'Tap to edit'}
       >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="currentColor">
-          <rect x="2" y="2" width="8" height="1.5" rx="0.5" />
-          <rect x="2" y="5.25" width="8" height="1.5" rx="0.5" />
-          <rect x="2" y="8.5" width="8" height="1.5" rx="0.5" />
-        </svg>
-      </div>
-      <div className="flex items-center gap-2">
+        <MuteButton muted={muted} onToggle={() => onUpdate({ muted: !muted })} />
+        <DragHandle onTouchStart={onTouchStart} onTouchMove={onTouchMove} onTouchEnd={onTouchEnd} />
         <span className={`w-2 h-2 rounded-full flex-shrink-0 ${cat.dot}`} />
-        <select
-          value={expense.category}
-          onChange={(e) => onUpdate({ category: e.target.value })}
-          className="text-xs cursor-pointer truncate w-full py-0.5 px-1 font-sans"
-        >
-          {CATEGORIES.map(c => (
-            <option key={c.id} value={c.id}>{c.label}</option>
-          ))}
-        </select>
+        <span className={`flex-1 min-w-0 truncate text-sm ${muted ? 'text-ink-dim line-through' : 'text-ink'}`}>
+          {expense.name}
+        </span>
+        <span className="flex-shrink-0 font-mono text-sm tabular-nums text-right text-ink">
+          {fmt(expense.amount)}
+        </span>
       </div>
-      <input
-        type="text"
-        value={expense.name}
-        onChange={(e) => onUpdate({ name: e.target.value })}
-        className={`bg-transparent text-sm font-sans px-1 py-0.5 truncate ${muted ? 'text-ink-dim line-through' : 'text-ink'}`}
-      />
-      <div className="relative">
-        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-dim font-mono text-sm">$</span>
-        <input
-          type="number"
-          value={expense.amount}
-          onChange={(e) => onUpdate({ amount: Number(e.target.value) })}
-          className="w-full bg-transparent px-2 py-0.5 pl-6 text-sm text-right"
-        />
-      </div>
-      <button
-        onClick={() => onUpdate({ muted: !muted })}
-        className={`text-sm transition-colors w-7 h-7 flex items-center justify-center rounded ${muted ? 'text-ink-dim hover:text-ink-3' : 'text-ink-3 hover:text-ink'}`}
-        title={muted ? 'Unmute' : 'Mute'}
-      >
-        {muted ? '◌' : '◉'}
-      </button>
-      <button
-        onClick={onRemove}
-        className="text-ink-dim hover:text-clay text-sm transition-colors w-8 h-8 flex items-center justify-center"
-        title="Remove"
-      >
-        ×
-      </button>
+      {expanded && (
+        <RowEditor onRemove={onRemove} onDone={onToggle}>
+          <label className="block min-w-0">
+            <span className="mono-label block mb-1">Category</span>
+            <select
+              value={expense.category}
+              onChange={(e) => onUpdate({ category: e.target.value })}
+              className="w-full text-xs cursor-pointer py-1 px-1 font-sans"
+            >
+              {CATEGORIES.map(c => (
+                <option key={c.id} value={c.id}>{c.label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block min-w-0">
+            <span className="mono-label block mb-1">Monthly amount</span>
+            <input
+              type="number"
+              value={expense.amount}
+              onChange={(e) => onUpdate({ amount: Number(e.target.value) })}
+              className="w-full px-2 py-1 text-sm text-right"
+            />
+          </label>
+          <label className="block min-w-0 col-span-2">
+            <span className="mono-label block mb-1">Name</span>
+            <input
+              type="text"
+              value={expense.name}
+              onChange={(e) => onUpdate({ name: e.target.value })}
+              className="w-full px-2 py-1 text-sm font-sans"
+            />
+          </label>
+        </RowEditor>
+      )}
     </div>
   );
 }
 
-function OneTimeRow({ expense, onUpdate, onRemove }: {
+function OneTimeRow({ expense, expanded, onToggle, onUpdate, onRemove }: {
   expense: OneTimeExpense;
+  expanded: boolean;
+  onToggle: () => void;
   onUpdate: (updates: Partial<Omit<OneTimeExpense, 'id'>>) => void;
   onRemove: () => void;
 }) {
   const muted = !!expense.muted;
   return (
-    <div className={`grid grid-cols-[80px_1fr_120px_28px_32px] gap-2 items-center px-1 ${muted ? 'opacity-40' : ''}`}>
-      <select
-        value={expense.month}
-        onChange={(e) => onUpdate({ month: Number(e.target.value) })}
-        className="text-xs cursor-pointer py-0.5 px-1 font-sans"
+    <div className={muted ? 'opacity-50' : ''}>
+      <div
+        className="flex items-center gap-2 px-1 py-2 cursor-pointer select-none"
+        onClick={onToggle}
+        title={expanded ? 'Collapse' : 'Tap to edit'}
       >
-        {MONTH_LABELS.map((label, i) => (
-          <option key={i + 1} value={i + 1}>{label}</option>
-        ))}
-      </select>
-      <input
-        type="text"
-        value={expense.name}
-        onChange={(e) => onUpdate({ name: e.target.value })}
-        className={`bg-transparent text-sm font-sans px-1 py-0.5 truncate ${muted ? 'text-ink-dim line-through' : 'text-ink'}`}
-      />
-      <div className="relative">
-        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-dim font-mono text-sm">$</span>
-        <input
-          type="number"
-          value={expense.amount}
-          onChange={(e) => onUpdate({ amount: Number(e.target.value) })}
-          className="w-full bg-transparent px-2 py-0.5 pl-6 text-sm text-right"
-        />
+        <MuteButton muted={muted} onToggle={() => onUpdate({ muted: !muted })} />
+        <span className="w-8 flex-shrink-0 font-mono text-[11px] text-ink-dim">{MONTH_LABELS[expense.month - 1]}</span>
+        <span className={`flex-1 min-w-0 truncate text-sm ${muted ? 'text-ink-dim line-through' : 'text-ink'}`}>
+          {expense.name}
+        </span>
+        <span className="flex-shrink-0 font-mono text-sm tabular-nums text-right text-ink">
+          {fmt(expense.amount)}
+        </span>
       </div>
-      <button
-        onClick={() => onUpdate({ muted: !muted })}
-        className={`text-sm transition-colors w-7 h-7 flex items-center justify-center rounded ${muted ? 'text-ink-dim hover:text-ink-3' : 'text-ink-3 hover:text-ink'}`}
-        title={muted ? 'Unmute' : 'Mute'}
-      >
-        {muted ? '◌' : '◉'}
-      </button>
-      <button
-        onClick={onRemove}
-        className="text-ink-dim hover:text-clay text-sm transition-colors w-8 h-8 flex items-center justify-center"
-        title="Remove"
-      >
-        ×
-      </button>
+      {expanded && (
+        <RowEditor onRemove={onRemove} onDone={onToggle}>
+          <label className="block min-w-0">
+            <span className="mono-label block mb-1">Month</span>
+            <select
+              value={expense.month}
+              onChange={(e) => onUpdate({ month: Number(e.target.value) })}
+              className="w-full text-xs cursor-pointer py-1 px-1 font-sans"
+            >
+              {MONTH_LABELS.map((label, i) => (
+                <option key={i + 1} value={i + 1}>{label}</option>
+              ))}
+            </select>
+          </label>
+          <label className="block min-w-0">
+            <span className="mono-label block mb-1">Amount</span>
+            <input
+              type="number"
+              value={expense.amount}
+              onChange={(e) => onUpdate({ amount: Number(e.target.value) })}
+              className="w-full px-2 py-1 text-sm text-right"
+            />
+          </label>
+          <label className="block min-w-0 col-span-2">
+            <span className="mono-label block mb-1">Name</span>
+            <input
+              type="text"
+              value={expense.name}
+              onChange={(e) => onUpdate({ name: e.target.value })}
+              className="w-full px-2 py-1 text-sm font-sans"
+            />
+          </label>
+        </RowEditor>
+      )}
     </div>
   );
 }
