@@ -3,6 +3,7 @@ import type { StintData, AccountBalances } from '../lib/types';
 import { StatCard } from '../components/StatCard';
 import { Panel } from '../components/Panel';
 import { StatusTag } from '../components/StatusTag';
+import { PageTitle, Note } from '../components/Ink';
 import { fmt, fmtPct, fmtDateShort, currentYear, weekdaysElapsedYTD, monthName } from '../lib/helpers';
 
 interface Props {
@@ -76,6 +77,14 @@ export function Dashboard({ data, balances, monthlyExpenses }: Props) {
 
   const maxMonthly = Math.max(...stats.monthlyIncome, 1);
 
+  // Margin note, data-driven only: the latest complete month is the year's best
+  const currentMonth = new Date().getMonth();
+  const lastComplete = currentMonth - 1;
+  const bestMonthYet =
+    lastComplete >= 0 &&
+    stats.monthlyIncome[lastComplete] > 0 &&
+    stats.monthlyIncome[lastComplete] === Math.max(...stats.monthlyIncome);
+
   // Resolve client names for pencils
   const clientMap = useMemo(() => {
     const m = new Map<string, string>();
@@ -92,8 +101,8 @@ export function Dashboard({ data, balances, monthlyExpenses }: Props) {
   const priorityLabels = ['Booked', 'Pencil', 'Pencil 2', 'Pencil 3'];
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-bold text-white">Dashboard</h1>
+    <div className="space-y-5">
+      <PageTitle>this year so far...</PageTitle>
 
       {/* Top stats */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -110,42 +119,57 @@ export function Dashboard({ data, balances, monthlyExpenses }: Props) {
       </div>
 
       {/* Monthly income chart */}
-      <Panel title="Monthly Income (YTD)">
-        <div className="flex items-end gap-1 h-32">
-          {stats.monthlyIncome.map((v, i) => (
-            <div key={i} className="flex-1 flex flex-col items-center gap-1">
-              <div className="w-full flex flex-col justify-end h-24">
-                <div
-                  className="w-full bg-accent rounded-t"
-                  style={{ height: `${(v / maxMonthly) * 100}%`, minHeight: v > 0 ? 2 : 0 }}
-                />
+      <Panel title="Monthly Income (YTD)" tape="fern">
+        <div className="relative flex items-end gap-1.5 h-32 pt-5">
+          {bestMonthYet && (
+            <Note
+              className="absolute top-0 pr-1"
+              style={{ left: `${(lastComplete / 12) * 100}%`, transform: 'translateX(-100%) rotate(-3deg)' }}
+            >
+              best month yet →
+            </Note>
+          )}
+          {stats.monthlyIncome.map((v, i) => {
+            const fill = i === currentMonth
+              ? 'bg-forest'
+              : bestMonthYet && i === lastComplete
+                ? 'bg-fern'
+                : 'bg-[#b8ad92]';
+            return (
+              <div key={i} className="pbar-col flex-1 flex flex-col items-center gap-1">
+                <div className="w-full flex flex-col justify-end h-24">
+                  <div
+                    className={`pbar ${fill}`}
+                    style={{ height: `${(v / maxMonthly) * 100}%`, minHeight: v > 0 ? 2 : 0, '--b': i } as React.CSSProperties}
+                  />
+                </div>
+                <span className="text-[10px] font-mono text-ink-dim">{monthName(i).charAt(0)}</span>
               </div>
-              <span className="text-[10px] text-gray-500">{monthName(i).charAt(0)}</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
       </Panel>
 
       {/* Upcoming bookings */}
       <Panel title="Upcoming Bookings">
         {stats.upcoming.length === 0 ? (
-          <p className="text-sm text-gray-500">No upcoming bookings</p>
+          <p className="text-sm text-ink-dim">No upcoming bookings</p>
         ) : (
-          <div className="space-y-2">
+          <div>
             {stats.upcoming.map((p) => {
               const proj = p.project_id ? projectMap.get(p.project_id) : null;
               const clientName = proj ? clientMap.get(proj.client_id) : (p.client_id ? clientMap.get(p.client_id) : null);
               return (
-                <div key={p.id} className="flex items-center justify-between text-sm">
+                <div key={p.id} className="ledger-row flex items-center justify-between py-2 text-sm">
                   <div>
-                    <span className="text-gray-200">{clientName ?? 'Unknown'}</span>
-                    {proj && <span className="text-gray-500 ml-2">· {proj.name}</span>}
+                    <span className="text-ink">{clientName ?? 'Unknown'}</span>
+                    {proj && <span className="text-ink-dim ml-2">· {proj.name}</span>}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <span className="text-gray-500 font-mono text-xs">
+                  <div className="flex items-center gap-3">
+                    <span className="text-ink-dim font-mono text-xs">
                       {fmtDateShort(p.start_date)}–{fmtDateShort(p.end_date)}
                     </span>
-                    <StatusTag status={priorityLabels[p.priority] ?? 'pencil'} />
+                    <StatusTag status={priorityLabels[p.priority] ?? 'pencil'} seed={p.id} />
                   </div>
                 </div>
               );

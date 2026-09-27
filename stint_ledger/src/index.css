@@ -11,7 +11,7 @@
     overscroll-behavior: none;
   }
 
-  /* Scrollbar styling */
+  /* Scrollbar styling (shared with /tickers) */
   ::-webkit-scrollbar {
     width: 6px;
     height: 6px;
@@ -27,7 +27,7 @@
     background: #3a4050;
   }
 
-  /* Range slider styling */
+  /* Range slider defaults (kept for any non-themed page) */
   input[type='range'] {
     -webkit-appearance: none;
     appearance: none;
@@ -60,5 +60,1185 @@
     border-radius: 50%;
     background: #5b8def;
     border: 2px solid #0a0c10;
+  }
+}
+
+/* =====================================================================
+   Field Journal theme. Main app only: every rule below is scoped under
+   body.fj (added by App.tsx) or a fj-specific class, so the standalone
+   /tickers page is untouched. Cut-paper scraps on a dark pine desk.
+   ===================================================================== */
+
+:root {
+  --desk1: #17211a;
+  --desk2: #101710;
+  --paper: #f3ecdc;
+  --paper2: #ece2cc;
+  --paper3: #e3d8bf;
+  --sage-paper: #e2e8d2;
+  --kraft: #d9c6a3;
+  --ink: #2e2a20;
+  --ink-dim: #877e64;
+  --forest: #3f6b42;
+  --oxblood: #8e3b2f;
+  --clay: #b0563b;
+  --fern: #5f7d4f;
+  --pencil: #a8813a;
+  --sage-label: #cfd8bf;
+  --rule: rgba(120, 105, 70, 0.4);
+  --rule-heavy: rgba(46, 42, 32, 0.7);
+  --font-serif: 'Fraunces', Georgia, serif;
+  --font-hand: 'Caveat', cursive;
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace;
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif;
+  /* Desk grain: fractal noise tile, alpha baked to roughly 5 percent */
+  --desk-noise: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='240' height='240'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.72' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.86 0 0 0 0 0.9 0 0 0 0 0.78 0 0 0 0.11 0'/%3E%3C/filter%3E%3Crect width='240' height='240' filter='url(%23n)'/%3E%3C/svg%3E");
+  /* Stamp grunge: noise thresholded into a speckled alpha mask */
+  --grunge: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='60'%3E%3Cfilter id='g'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.7' numOctaves='2' seed='7' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 8 -2.6'/%3E%3C/filter%3E%3Crect width='140' height='60' filter='url(%23g)'/%3E%3C/svg%3E");
+  --settle-ease: cubic-bezier(0.22, 1.1, 0.36, 1);
+}
+
+body.fj {
+  color: var(--ink);
+  font-family: var(--font-sans);
+  background-color: var(--desk2);
+  background-image:
+    var(--desk-noise),
+    radial-gradient(60% 42% at 90% 0%, rgba(120, 150, 100, 0.26), transparent 70%),
+    linear-gradient(165deg, var(--desk1), var(--desk2));
+  background-attachment: scroll, fixed, fixed;
+  min-height: 100vh;
+}
+
+.fj-main {
+  overflow-x: clip;
+}
+
+/* ---------- Type helpers ---------- */
+
+.fj-title {
+  display: inline-block;
+  font-family: var(--font-hand);
+  font-weight: 600;
+  font-size: 1.9rem;
+  line-height: 1;
+  color: var(--sage-label);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5), 0 0 14px rgba(207, 216, 191, 0.18);
+  transform: rotate(-1.2deg);
+  transform-origin: left bottom;
+  position: relative;
+  padding-bottom: 6px;
+}
+
+.fj-desk-text {
+  color: var(--sage-label);
+}
+
+.fj-desk-dim {
+  color: rgba(207, 216, 191, 0.62);
+}
+
+.fj-wordmark {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  letter-spacing: 0.01em;
+  color: var(--paper);
+}
+
+.hand {
+  font-family: var(--font-hand);
+}
+
+.serif {
+  font-family: var(--font-serif);
+}
+
+.figure {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.mono-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-dim);
+}
+
+/* Fleuron: the one infinite animation in the app, a barely visible sway */
+.fleuron {
+  display: inline-block;
+  transform-origin: 50% 100%;
+  animation: fj-sway 8s ease-in-out infinite;
+}
+
+/* ---------- Paper scraps ---------- */
+
+.paper {
+  position: relative;
+  --rot: 0deg;
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 255px 12px 225px 12px / 12px 225px 12px 255px;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.35), 0 12px 22px -10px rgba(0, 0, 0, 0.55);
+  transform: rotate(var(--rot));
+  transition: transform 160ms ease-out;
+  animation: fj-settle 420ms var(--settle-ease) backwards;
+  animation-delay: calc(var(--i, 0) * 50ms);
+}
+.paper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 6px 10px rgba(0, 0, 0, 0.4), 0 20px 30px -12px rgba(0, 0, 0, 0.65);
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+  pointer-events: none;
+  z-index: -1;
+}
+.paper:hover,
+.paper:active {
+  transform: translateY(-2px) rotate(calc(var(--rot) * 0.35));
+}
+.paper:hover::after,
+.paper:active::after {
+  opacity: 1;
+}
+.paper-1 {
+  --rot: -0.7deg;
+  border-radius: 255px 12px 225px 12px / 12px 225px 12px 255px;
+}
+.paper-2 {
+  --rot: 0.8deg;
+  border-radius: 14px 235px 10px 245px / 245px 10px 235px 14px;
+}
+.paper-3 {
+  --rot: -1.2deg;
+  border-radius: 240px 10px 250px 16px / 14px 250px 10px 240px;
+  background: var(--paper2);
+}
+.paper-4 {
+  --rot: 1.3deg;
+  border-radius: 12px 250px 14px 230px / 230px 14px 250px 12px;
+}
+.paper-flat {
+  --rot: 0deg;
+}
+.paper-pad {
+  padding: 1rem;
+}
+@media (min-width: 768px) {
+  .paper-pad {
+    padding: 1.4rem 1.5rem;
+  }
+}
+
+.paper-title {
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-size: 0.95rem;
+  letter-spacing: 0.02em;
+  color: var(--ink);
+  border-bottom: 2px solid var(--rule-heavy);
+  padding-bottom: 0.3rem;
+  flex: 1;
+}
+
+/* Stat cards: small scraps, alternating tones and tilts */
+.scrap {
+  position: relative;
+  --rot: -0.8deg;
+  background: var(--paper);
+  color: var(--ink);
+  border-radius: 12px 180px 10px 190px / 190px 10px 180px 12px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3), 0 8px 14px -8px rgba(0, 0, 0, 0.5);
+  padding: 0.8rem 0.95rem;
+  transform: rotate(var(--rot));
+  transition: transform 160ms ease-out;
+  animation: fj-settle 420ms var(--settle-ease) backwards;
+  animation-delay: calc(var(--i, 0) * 50ms);
+}
+.scrap::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  box-shadow: 0 5px 8px rgba(0, 0, 0, 0.35), 0 14px 22px -10px rgba(0, 0, 0, 0.6);
+  opacity: 0;
+  transition: opacity 160ms ease-out;
+  pointer-events: none;
+  z-index: -1;
+}
+.scrap:hover,
+.scrap:active {
+  transform: translateY(-2px) rotate(calc(var(--rot) * 0.35));
+}
+.scrap:hover::after,
+.scrap:active::after {
+  opacity: 1;
+}
+.scrap:nth-child(4n + 2) {
+  --rot: 0.6deg;
+  background: var(--paper2);
+  border-radius: 170px 10px 190px 12px / 12px 190px 10px 170px;
+}
+.scrap:nth-child(4n + 3) {
+  --rot: 0.9deg;
+  border-radius: 10px 200px 12px 170px / 170px 12px 200px 10px;
+}
+.scrap:nth-child(4n + 4) {
+  --rot: -0.5deg;
+  background: var(--sage-paper);
+  border-radius: 190px 12px 170px 10px / 10px 170px 12px 190px;
+}
+.scrap-label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--ink-dim);
+  margin-bottom: 0.2rem;
+}
+.scrap-value {
+  font-family: var(--font-serif);
+  font-size: 1.45rem;
+  line-height: 1.15;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.scrap-sub {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-dim);
+  margin-top: 0.25rem;
+}
+
+/* Washi tape: sprinkle sparingly */
+.washi {
+  position: absolute;
+  top: -9px;
+  left: 26px;
+  width: 76px;
+  height: 22px;
+  background: rgba(95, 125, 79, 0.58);
+  transform: rotate(-4deg);
+  clip-path: polygon(0 14%, 2% 0, 5% 12%, 100% 4%, 98% 100%, 95% 88%, 1% 96%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  z-index: 2;
+  pointer-events: none;
+  animation: fj-tape 220ms ease-out backwards;
+  animation-delay: calc(var(--i, 0) * 50ms + 520ms);
+}
+.washi::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 3px, transparent 3px 7px);
+}
+.washi-clay {
+  background: rgba(176, 86, 59, 0.55);
+}
+.washi-kraft {
+  background: rgba(217, 198, 163, 0.85);
+}
+.washi-r {
+  left: auto;
+  right: 28px;
+  transform: rotate(5deg);
+}
+
+/* ---------- Ledger tables and rows ---------- */
+
+.ledger {
+  width: 100%;
+  border-collapse: collapse;
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  color: var(--ink);
+}
+.ledger th {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-dim);
+  font-weight: 500;
+  border-bottom: 2px solid var(--rule-heavy);
+  padding-top: 0.3rem;
+  padding-bottom: 0.3rem;
+}
+.ledger td {
+  border-top: 1px dotted var(--rule);
+  padding-top: 0.45rem;
+  padding-bottom: 0.45rem;
+}
+.ledger tbody tr:first-child td {
+  border-top: 0;
+}
+.ledger tfoot td,
+.ledger tr.total td {
+  border-top: 3px double var(--rule-heavy);
+  font-weight: 600;
+}
+.ledger-row {
+  border-bottom: 1px dotted var(--rule);
+}
+.ledger-row:last-child {
+  border-bottom: 0;
+}
+.ledger-total {
+  border-top: 3px double var(--rule-heavy);
+}
+.ledger-head {
+  border-bottom: 2px solid var(--rule-heavy);
+}
+
+/* ---------- Rubber stamps ---------- */
+
+.stamp {
+  display: inline-block;
+  --stamp-rot: -4deg;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  line-height: 1;
+  white-space: nowrap;
+  padding: 3px 6px;
+  border: 1.8px solid currentColor;
+  border-radius: 3px;
+  color: var(--ink-dim);
+  opacity: 0.82;
+  transform: rotate(var(--stamp-rot));
+  -webkit-mask-image: var(--grunge);
+  mask-image: var(--grunge);
+  -webkit-mask-size: 140px 60px;
+  mask-size: 140px 60px;
+  animation: fj-stamp 240ms cubic-bezier(0.6, 0, 0.95, 0.35) backwards;
+  animation-delay: calc(var(--i, 0) * 50ms + 440ms);
+}
+.stamp-forest {
+  color: var(--forest);
+}
+.stamp-pencil {
+  color: var(--pencil);
+}
+.stamp-clay {
+  color: var(--clay);
+}
+.stamp-dim {
+  color: var(--ink-dim);
+}
+.stamp-oxblood {
+  color: var(--oxblood);
+  font-size: 11px;
+  border-width: 2.2px;
+  padding: 3px 7px;
+}
+
+/* ---------- Buttons ---------- */
+
+.btn-tag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 5px 12px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  background: var(--fern);
+  color: var(--paper);
+  border-radius: 4px 10px 5px 9px / 9px 5px 10px 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 4px 8px -4px rgba(0, 0, 0, 0.45);
+  transform: rotate(-1deg);
+  transition: transform 100ms ease-out, box-shadow 100ms ease-out, filter 100ms;
+  white-space: nowrap;
+}
+.btn-tag:hover {
+  filter: brightness(1.07);
+}
+.btn-tag:active {
+  transform: rotate(-1deg) scale(0.96);
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.3), 0 1px 3px -2px rgba(0, 0, 0, 0.45);
+}
+.btn-tag:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  filter: none;
+}
+.btn-tag.clay {
+  background: var(--clay);
+}
+.btn-tag.kraft {
+  background: var(--kraft);
+  color: var(--ink);
+}
+
+.btn-stamp {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.3rem;
+  padding: 4px 9px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.2;
+  color: var(--ink-dim);
+  background: transparent;
+  border: 1.6px solid currentColor;
+  border-radius: 3px;
+  transform: rotate(-1deg);
+  transition: transform 100ms ease-out, color 120ms;
+  white-space: nowrap;
+}
+.btn-stamp:hover {
+  color: var(--ink);
+}
+.btn-stamp:active {
+  transform: rotate(-1deg) scale(0.96);
+}
+.btn-stamp:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.btn-stamp.on-desk {
+  color: rgba(207, 216, 191, 0.75);
+}
+.btn-stamp.on-desk:hover {
+  color: var(--paper);
+}
+.btn-stamp.clay,
+.btn-stamp.clay:hover {
+  color: var(--clay);
+}
+.btn-stamp.fern,
+.btn-stamp.fern:hover {
+  color: var(--fern);
+}
+.btn-stamp.active {
+  color: var(--paper);
+  background: var(--fern);
+  border-color: var(--fern);
+}
+
+.btn-link {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--ink-dim);
+  text-decoration: underline dotted;
+  text-underline-offset: 3px;
+  transition: color 120ms;
+}
+.btn-link:hover {
+  color: var(--ink);
+}
+.btn-link.clay,
+.btn-link.clay:hover {
+  color: var(--clay);
+}
+.btn-link.fern {
+  color: var(--fern);
+}
+.btn-link.on-desk {
+  color: rgba(207, 216, 191, 0.7);
+}
+.btn-link.on-desk:hover {
+  color: var(--paper);
+}
+
+/* Price tags for rate presets */
+.price-tag {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 4px 10px 4px 17px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background: var(--sage-paper);
+  color: var(--ink);
+  border: 1px solid rgba(46, 42, 32, 0.18);
+  border-radius: 4px 9px 5px 10px / 9px 5px 10px 4px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transform: rotate(-1.5deg);
+  transition: transform 100ms ease-out, box-shadow 100ms ease-out;
+}
+.price-tag::before {
+  content: '';
+  position: absolute;
+  left: 6px;
+  top: 50%;
+  width: 5px;
+  height: 5px;
+  margin-top: -2.5px;
+  border-radius: 50%;
+  background: var(--paper);
+  box-shadow: inset 0 0 0 1px rgba(46, 42, 32, 0.45);
+}
+.price-tag + .price-tag {
+  transform: rotate(1.2deg);
+}
+.price-tag:active {
+  transform: scale(0.96);
+  box-shadow: 0 0 1px rgba(0, 0, 0, 0.25);
+}
+.price-tag.active {
+  background: var(--fern);
+  color: var(--paper);
+  border-color: var(--fern);
+}
+.price-tag.active::before {
+  background: var(--paper);
+}
+
+/* Folder tabs (freelance / full-time) */
+.folder-tabs {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  padding-left: 6px;
+  border-bottom: 3px solid var(--paper);
+}
+.folder-tab {
+  position: relative;
+  padding: 7px 18px 8px;
+  font-family: var(--font-serif);
+  font-weight: 600;
+  font-size: 0.9rem;
+  line-height: 1.2;
+  border-radius: 10px 10px 0 0;
+  background: var(--paper2);
+  color: var(--ink-dim);
+  z-index: 1;
+  transform: translateY(2px) scale(0.97);
+  transform-origin: bottom center;
+  opacity: 0.85;
+  box-shadow: 0 -1px 3px rgba(0, 0, 0, 0.3);
+  transition: transform 140ms ease-out, opacity 140ms, color 140ms;
+}
+.folder-tab:hover {
+  color: var(--ink);
+  opacity: 1;
+}
+.folder-tab.active {
+  background: var(--paper);
+  color: var(--ink);
+  z-index: 2;
+  transform: none;
+  opacity: 1;
+  box-shadow: 0 -2px 4px rgba(0, 0, 0, 0.3), 0 6px 10px -6px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------- Sliders: brass paper fasteners ---------- */
+
+.fj input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 22px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.fj input[type='range']::-webkit-slider-runnable-track {
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(120, 105, 70, 0.55);
+}
+.fj input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 17px;
+  height: 17px;
+  margin-top: -7.5px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #d9b26a, #a8813a 70%);
+  border: 1px solid #8a6a2e;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55), 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition: transform 120ms ease-out, box-shadow 120ms ease-out;
+}
+.fj input[type='range']:active::-webkit-slider-thumb {
+  transform: scale(1.15);
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55), 0 3px 5px rgba(0, 0, 0, 0.45);
+}
+.fj input[type='range']::-moz-range-track {
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(120, 105, 70, 0.55);
+}
+.fj input[type='range']::-moz-range-thumb {
+  width: 17px;
+  height: 17px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 35% 30%, #d9b26a, #a8813a 70%);
+  border: 1px solid #8a6a2e;
+  box-shadow: inset 0 1px 1px rgba(255, 255, 255, 0.55), 0 1px 2px rgba(0, 0, 0, 0.35);
+  transition: transform 120ms ease-out;
+}
+.fj input[type='range']:active::-moz-range-thumb {
+  transform: scale(1.15);
+}
+.hand-value {
+  font-family: var(--font-hand);
+  font-size: 1.3rem;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--ink);
+}
+.hand-value.income {
+  color: var(--forest);
+}
+.hand-value.expense {
+  color: var(--oxblood);
+}
+
+/* ---------- Form controls ---------- */
+
+.fj input[type='text'],
+.fj input[type='number'],
+.fj input[type='email'],
+.fj input[type='password'],
+.fj input[type='date'],
+.fj select,
+.fj textarea {
+  background: #fbf6ea;
+  color: var(--ink);
+  border: 1px solid rgba(120, 105, 70, 0.45);
+  border-radius: 3px 6px 3px 6px / 6px 3px 6px 3px;
+  font-family: var(--font-mono);
+  color-scheme: light;
+}
+.fj input[type='text']:focus,
+.fj input[type='number']:focus,
+.fj input[type='email']:focus,
+.fj input[type='password']:focus,
+.fj input[type='date']:focus,
+.fj select:focus,
+.fj textarea:focus {
+  outline: none;
+  border-color: var(--fern);
+  box-shadow: 0 0 0 2px rgba(95, 125, 79, 0.2);
+}
+.fj select option {
+  background: #fbf6ea;
+  color: var(--ink);
+}
+.fj input.bg-transparent {
+  background: transparent;
+  border-color: transparent;
+}
+.fj input.bg-transparent:hover {
+  border-color: rgba(120, 105, 70, 0.35);
+}
+.fj input.bg-transparent:focus {
+  background: #fbf6ea;
+  border-color: var(--fern);
+}
+.fj ::placeholder {
+  color: var(--ink-dim);
+  opacity: 0.7;
+}
+
+/* Hand-drawn checkbox with an ink check that draws on */
+.hand-check {
+  position: relative;
+  display: inline-block;
+  width: 17px;
+  height: 17px;
+  flex-shrink: 0;
+  border: 1.8px solid var(--ink);
+  border-radius: 3px 5px 2px 6px;
+  transform: rotate(-2deg);
+  background: rgba(255, 255, 255, 0.35);
+  cursor: pointer;
+  vertical-align: middle;
+}
+/* On the desk (outside any paper) the box is drawn in pale sage */
+.fj-desk-text .hand-check {
+  border-color: var(--sage-label);
+  background: rgba(255, 255, 255, 0.08);
+}
+.fj-desk-text .hand-check svg path {
+  stroke: #9fc08a;
+}
+.hand-check input {
+  position: absolute;
+  inset: 0;
+  margin: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.hand-check svg {
+  position: absolute;
+  left: -4px;
+  top: -9px;
+  width: 26px;
+  height: 24px;
+  overflow: visible;
+  pointer-events: none;
+}
+.hand-check svg path {
+  fill: none;
+  stroke: var(--forest);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  opacity: 0;
+  transition: opacity 100ms ease-out, stroke-dashoffset 0s linear 100ms;
+}
+.hand-check.checked svg path {
+  stroke-dashoffset: 0;
+  opacity: 1;
+  transition: stroke-dashoffset 260ms ease-out, opacity 60ms;
+}
+.hand-check.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+.hand-check-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  cursor: pointer;
+  user-select: none;
+}
+.done-text {
+  text-decoration: line-through;
+  text-decoration-color: var(--forest);
+  text-decoration-thickness: 2px;
+  opacity: 0.55;
+}
+
+/* Deadline flags pinned to the card corner */
+.flag {
+  position: absolute;
+  top: -8px;
+  right: 14px;
+  padding: 3px 9px 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  background: var(--kraft);
+  transform: rotate(2deg);
+  transform-origin: top center;
+  clip-path: polygon(0 0, 100% 0, 100% 100%, 50% 80%, 0 100%);
+  z-index: 2;
+  white-space: nowrap;
+  animation: fj-wobble 500ms ease-in-out backwards;
+  animation-delay: calc(var(--i, 0) * 50ms + 440ms);
+}
+.flag-amber {
+  background: var(--pencil);
+  color: var(--paper);
+}
+.flag-clay {
+  background: var(--clay);
+  color: var(--paper);
+}
+
+/* ---------- Strips, bars, and progress ---------- */
+
+.strip {
+  display: flex;
+  height: 18px;
+  background: var(--paper2);
+  border-radius: 3px 120px 4px 110px / 110px 4px 120px 3px;
+  box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.25), 0 1px 1px rgba(255, 255, 255, 0.4);
+  overflow: hidden;
+  transform: rotate(-0.6deg);
+}
+.strip-seg {
+  height: 100%;
+  transform-origin: left center;
+  animation: fj-grow-x 380ms ease-out backwards;
+  animation-delay: calc(var(--i, 0) * 50ms + var(--s, 0) * 200ms + 120ms);
+}
+.strip-worked {
+  background: repeating-linear-gradient(135deg, var(--forest) 0 6px, #5a8a5d 6px 12px);
+}
+.strip-committed {
+  background: repeating-linear-gradient(135deg, var(--pencil) 0 6px, #c9a25a 6px 12px);
+}
+.strip-needed {
+  background: repeating-linear-gradient(135deg, transparent 0 6px, rgba(46, 42, 32, 0.07) 6px 12px);
+}
+
+.pstrip {
+  height: 8px;
+  background: rgba(46, 42, 32, 0.09);
+  border-radius: 2px 40px 2px 30px / 30px 2px 40px 2px;
+  overflow: hidden;
+}
+.pstrip-fill {
+  height: 100%;
+  border-radius: 2px 20px 2px 16px / 16px 2px 20px 2px;
+  transform-origin: left center;
+  animation: fj-grow-x 380ms ease-out backwards;
+  animation-delay: calc(var(--i, 0) * 50ms + 200ms);
+}
+
+.pbar {
+  --brot: 0deg;
+  width: 100%;
+  border-radius: 3px 6px 2px 5px / 5px 2px 6px 3px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  transform-origin: bottom center;
+  transform: rotate(var(--brot)) scaleY(1);
+  animation: fj-grow-y 380ms ease-out backwards;
+  animation-delay: calc(var(--i, 0) * 50ms + var(--b, 0) * 35ms + 160ms);
+}
+.pbar-col:nth-child(odd) .pbar {
+  --brot: -1.2deg;
+}
+.pbar-col:nth-child(even) .pbar {
+  --brot: 1deg;
+}
+.pbar-stack {
+  border-radius: 0;
+}
+.pbar-stack:first-child {
+  border-radius: 3px 6px 0 0 / 5px 3px 0 0;
+}
+
+.alloc {
+  display: flex;
+  height: 22px;
+  overflow: hidden;
+  border-radius: 3px 90px 4px 80px / 80px 4px 90px 3px;
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+  transform: rotate(-0.4deg);
+}
+.alloc > * {
+  height: 100%;
+  transform-origin: left center;
+  animation: fj-grow-x 380ms ease-out backwards;
+  animation-delay: calc(var(--i, 0) * 50ms + 160ms);
+}
+
+/* ---------- Callouts and notes ---------- */
+
+.callout {
+  background: var(--sage-paper);
+  border-left: 4px solid var(--fern);
+  color: var(--forest);
+  padding: 0.7rem 1rem;
+  border-radius: 3px 14px 4px 12px / 12px 4px 14px 3px;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+.callout-good {
+  border-left-color: var(--forest);
+  color: var(--forest);
+}
+.callout-warn {
+  border-left-color: var(--pencil);
+  color: #7f5f22;
+}
+.callout-bad {
+  border-left-color: var(--oxblood);
+  color: var(--oxblood);
+  background: #efe0d3;
+}
+.callout-info {
+  border-left-color: var(--umber, #7a5c2e);
+  color: #5e4622;
+}
+
+/* Data-driven margin notes, written on left to right */
+.note {
+  display: inline-block;
+  font-family: var(--font-hand);
+  font-size: 1.25rem;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--forest);
+  transform: rotate(-3deg);
+  white-space: nowrap;
+  animation: fj-write 450ms ease-out backwards;
+  animation-delay: 600ms;
+}
+.note-clay {
+  color: var(--clay);
+}
+.note-desk {
+  color: var(--sage-label);
+  text-shadow: 0 1px 0 rgba(0, 0, 0, 0.5);
+}
+
+/* Squiggle underline beneath section titles, drawn on */
+.squiggle {
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  width: 100%;
+  height: 8px;
+  overflow: visible;
+}
+.squiggle path {
+  fill: none;
+  stroke: rgba(207, 216, 191, 0.55);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: fj-draw 500ms ease-out forwards;
+  animation-delay: 420ms;
+}
+
+/* Hand-drawn ink circle around a figure */
+.ink-circle-wrap {
+  position: relative;
+  display: inline-block;
+}
+.ink-circle {
+  position: absolute;
+  left: -10%;
+  top: -22%;
+  width: 120%;
+  height: 144%;
+  overflow: visible;
+  pointer-events: none;
+}
+.ink-circle path {
+  fill: none;
+  stroke: var(--forest);
+  stroke-width: 2;
+  stroke-linecap: round;
+  opacity: 0.75;
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: fj-draw 500ms ease-out forwards;
+  animation-delay: calc(var(--i, 0) * 50ms + 460ms);
+}
+
+/* ---------- Navigation ---------- */
+
+.nav-desk {
+  background: linear-gradient(180deg, rgba(0, 0, 0, 0.26), rgba(0, 0, 0, 0.42));
+  border-right: 1px solid rgba(207, 216, 191, 0.12);
+}
+.nav-item {
+  color: rgba(207, 216, 191, 0.72);
+  transition: color 120ms, background-color 120ms;
+}
+.nav-item:hover {
+  color: var(--paper);
+  background: rgba(255, 255, 255, 0.04);
+}
+.nav-item.active {
+  color: var(--ink);
+  background: var(--paper);
+  border-radius: 4px 10px 4px 12px / 12px 4px 10px 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35), 0 6px 10px -6px rgba(0, 0, 0, 0.5);
+  transform: rotate(-0.8deg);
+  font-weight: 500;
+}
+.tabbar {
+  background: #0d130e;
+  border-top: 1px solid rgba(207, 216, 191, 0.14);
+}
+.tab-item {
+  color: rgba(207, 216, 191, 0.6);
+}
+.tab-item .tab-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 3px 6px 2px;
+  border-radius: 4px 8px 4px 9px / 9px 4px 8px 4px;
+  transition: transform 100ms ease-out;
+}
+.tab-item.active .tab-pill {
+  background: var(--paper);
+  color: var(--ink);
+  transform: rotate(-1.5deg);
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+}
+.tab-item:active .tab-pill {
+  transform: scale(0.96);
+}
+
+/* Login wax seal */
+.seal {
+  width: 76px;
+  height: 76px;
+  border-radius: 48% 52% 50% 50% / 52% 48% 52% 48%;
+  background: radial-gradient(circle at 38% 32%, #7d9c6c, var(--fern) 55%, #48633b 100%);
+  color: var(--paper);
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 0.85rem;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.35), 0 8px 14px -6px rgba(0, 0, 0, 0.5), inset 0 1px 1px rgba(255, 255, 255, 0.3), inset 0 -2px 3px rgba(0, 0, 0, 0.25);
+  outline: 2px dashed rgba(243, 236, 220, 0.35);
+  outline-offset: -8px;
+  transition: transform 100ms ease-out, box-shadow 100ms ease-out;
+}
+.seal:hover {
+  filter: brightness(1.06);
+}
+.seal:active {
+  transform: scale(0.96);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.35), inset 0 1px 1px rgba(255, 255, 255, 0.3);
+}
+.seal:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ---------- Keyframes ---------- */
+
+@keyframes fj-settle {
+  from {
+    opacity: 0;
+    transform: translateY(-14px) rotate(calc(var(--rot, 0deg) + 2.5deg)) scale(1.02);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) rotate(var(--rot, 0deg)) scale(1);
+  }
+}
+@keyframes fj-tape {
+  from {
+    opacity: 0;
+    transform: rotate(-4deg) scale(1.15);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(-4deg) scale(1);
+  }
+}
+@keyframes fj-stamp {
+  from {
+    opacity: 0;
+    transform: rotate(var(--stamp-rot, -4deg)) scale(1.6);
+  }
+  to {
+    opacity: 0.82;
+    transform: rotate(var(--stamp-rot, -4deg)) scale(1);
+  }
+}
+@keyframes fj-grow-y {
+  from {
+    transform: rotate(var(--brot, 0deg)) scaleY(0);
+  }
+  to {
+    transform: rotate(var(--brot, 0deg)) scaleY(1);
+  }
+}
+@keyframes fj-grow-x {
+  from {
+    transform: scaleX(0);
+  }
+  to {
+    transform: scaleX(1);
+  }
+}
+@keyframes fj-draw {
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+@keyframes fj-write {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+@keyframes fj-wobble {
+  0% {
+    transform: rotate(2deg);
+  }
+  50% {
+    transform: rotate(-1deg);
+  }
+  100% {
+    transform: rotate(2deg);
+  }
+}
+@keyframes fj-sway {
+  0%,
+  100% {
+    transform: rotate(-1.5deg);
+  }
+  50% {
+    transform: rotate(1.5deg);
+  }
+}
+@keyframes fj-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* Washi tape on the right keeps its own rotation through the press */
+.washi-r {
+  animation-name: fj-tape-r;
+}
+@keyframes fj-tape-r {
+  from {
+    opacity: 0;
+    transform: rotate(5deg) scale(1.15);
+  }
+  to {
+    opacity: 1;
+    transform: rotate(5deg) scale(1);
+  }
+}
+
+/* ---------- Reduced motion ---------- */
+
+@media (prefers-reduced-motion: reduce) {
+  .paper,
+  .scrap,
+  .stamp,
+  .washi,
+  .pbar,
+  .strip-seg,
+  .pstrip-fill,
+  .alloc > *,
+  .note {
+    animation: fj-fade 150ms ease-out backwards;
+    animation-delay: 0s;
+  }
+  .flag,
+  .fleuron {
+    animation: none;
+  }
+  .squiggle path,
+  .ink-circle path {
+    animation: none;
+    stroke-dashoffset: 0;
+  }
+  .paper,
+  .scrap,
+  .btn-tag,
+  .btn-stamp,
+  .price-tag,
+  .folder-tab,
+  .seal {
+    transition: none;
   }
 }

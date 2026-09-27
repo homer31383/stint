@@ -106,8 +106,8 @@ export default defineConfig(({ mode }) => {
           name: 'Stint Ledger',
           short_name: 'Stint Ledger',
           description: 'Personal financial dashboard for freelance Creative Director',
-          theme_color: '#0a0c10',
-          background_color: '#0a0c10',
+          theme_color: '#17211a',
+          background_color: '#101710',
           display: 'standalone',
           icons: [
             { src: '/icon-192.png', sizes: '192x192', type: 'image/png' },

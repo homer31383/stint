@@ -17,7 +17,22 @@ Stint Ledger is a personal financial dashboard PWA for a freelance Creative Dire
 | Charts | Recharts | ^2.12.0 |
 | PWA | vite-plugin-pwa (Workbox) | ^0.20.0 |
 | Type defs | @types/react, @types/react-dom | ^18.3.3 / ^18.3.0 |
-| Fonts | IBM Plex Sans (UI), IBM Plex Mono (numbers) | Google Fonts CDN |
+| Fonts | Fraunces (headings, figures), Caveat (handwriting), IBM Plex Mono (tables, dates), IBM Plex Sans (body) | Google Fonts CDN |
+
+## Design: Field Journal Theme
+
+**Pre-restyle baseline commit: `8a17db4`** (`pre-restyle: dark theme baseline before field journal`). To revert the whole restyle: `git revert <restyle commit>` or check out that hash for the old dark theme.
+
+The main app is a handcrafted cut-paper collage on a dark pine desk. The `/tickers` page keeps its own biophilic theme and shares nothing with this (it is a separate lazy root in `main.tsx`; `App.tsx` adds the `fj` class to `<body>` on load, and every themed rule in `index.css` is scoped under `body.fj` or an `fj`/theme class).
+
+- **Palette** (CSS variables in `index.css`, Tailwind tokens in `tailwind.config.js`): desk `#17211a` to `#101710`, paper `#f3ecdc` / `#ece2cc` / sage `#e2e8d2` / kraft `#d9c6a3`, ink `#2e2a20`, ink-dim `#877e64`, forest `#3f6b42` (credits, positive), oxblood `#8e3b2f` and clay `#b0563b` (debits, negative, destructive), fern `#5f7d4f` (accent), pencil `#a8813a` (pending, amber). Extra inks: inkblue, umber, brass, sagedeep. No pure black, no alarm red.
+- **Legacy tokens remapped**: `accent` = fern, `positive` = forest, `negative` = oxblood, `caution` = pencil, `retirement` = umber, `highlight` = inkblue, `surface-1..3` = paper tones. The old `text-gray-*` classes were renamed to an ink ramp: `text-ink`, `text-ink-2`, `text-ink-3`, `text-ink-dim`, `text-ink-faint` (darkest to lightest).
+- **Type rule (critical)**: figures, tables, totals stay Fraunces (`.figure`, `.scrap-value`) or Plex Mono (`.ledger`, `.mono-label`) in ink. Caveat (`.hand`, `.fj-title`, `.note`, `.hand-value`) only annotates; it never carries data the reader must read precisely, except slider values which are intentionally handwritten.
+- **Components / classes**: `.paper` + `.paper-1..4` (hand-cut radius + tilt, `.paper-flat` for dense tables), `.scrap` (stat cards, nth-child tones), `.washi` (tape, sprinkle sparingly), `.paper-title`, `.ledger` (dotted row rules, 2px header rule, 3px double total rule), `.stamp` + `.stamp-forest/pencil/clay/oxblood/dim` (grunge mask, per-instance `--stamp-rot`), `.btn-tag` (fern paper tag), `.btn-stamp` (outlined), `.btn-link`, `.price-tag` (rate presets), `.folder-tabs`/`.folder-tab` (freelance / full-time), `.strip` + `.strip-worked/committed/needed` (days to target), `.hand-check`, `.flag` + `.flag-amber/clay` (deadlines), `.pbar` (paper chart bars, `--b` index), `.alloc` (allocation strips), `.callout` + `-good/-warn/-bad`, `.note`, `.squiggle`, `.ink-circle`, `.seal` (login), `.nav-item`, `.tabbar`.
+- **Margin notes are data-driven only**: "best month yet" (Dashboard, latest complete month is the year's max), "in the black" (Planner, monthly cash flow > 0, also circles the Net Cash Flow figure), "getting stale..." (Invoices, unpaid and 10+ days past due). Do not add decorative notes.
+- **Animation** (transform/opacity only, all in `index.css`): papers settle on view entry (`fj-settle`, 420ms, staggered 50ms via `--i`, which `App.tsx` assigns to `.paper`/`.scrap` before paint, capped at `SETTLE_STAGGER_CAP` = 10; cut to 6 if Android Chrome feels sluggish), washi tape presses in after its card, stamps press down (`fj-stamp`, keyed on status so real changes replay), check marks and squiggles/circles draw on via stroke-dashoffset, notes reveal with clip-path 600ms after entry, bars grow from the baseline (`fj-grow-y`, `--b` stagger), strip segments slide in (`--s`). Hover/tap lifts cards (rotation eases toward 0, shadow via `::after` opacity), buttons and tags press (scale 0.96), the slider knob scales 1.15 while dragging. Ambient: the deadline flag wobbles once on settle; the fleuron sways on an 8s loop (the only infinite animation). `prefers-reduced-motion` collapses entrances to a 150ms fade and disables the loop and wobble.
+- **Icons**: `public/favicon.svg` plus `scripts/make-ledger-icons.mjs` (pure zlib PNG encoder) generate `icon-192.png` / `icon-512.png`: pine circle, cream scrap, washi tape, handwritten L.
+- **Guardrails**: rotations stay within about 1.3deg and never apply to dense table content (use `dense` on Panel). Form controls are cream with ink text via global `.fj input/select/textarea` rules; `bg-transparent` inputs stay invisible until hover/focus. No em dashes in code or copy. No image assets or new dependencies.
 
 ## How to Run
 
@@ -34,9 +49,9 @@ Vite is configured with `server: { host: '0.0.0.0' }` so the dev server is acces
 ## File Structure
 
 ```
-├── index.html                          HTML shell with IBM Plex font imports, dark body class
+├── index.html                          HTML shell with Fraunces/Caveat/IBM Plex font imports
 ├── vite.config.ts                      Vite config: React plugin, PWA manifest/workbox, LAN host
-├── tailwind.config.js                  Custom colors (surface-0..3, accent, positive, negative, etc.)
+├── tailwind.config.js                  Field Journal palette (paper, ink ramp, forest/oxblood/fern/pencil) + remapped legacy tokens
 ├── tsconfig.json                       Strict TS, ES2020 target, bundler module resolution
 ├── package.json                        Dependencies: react, supabase-js, idb, recharts, tailwindcss
 ├── .env                                VITE_SUPABASE_URL, VITE_SUPABASE_ANON_KEY (gitignored)
@@ -66,13 +81,15 @@ Vite is configured with `server: { host: '0.0.0.0' }` so the dev server is acces
     │   ├── useSavedScenarios.ts         Save/load/compare named planner+expense snapshots, persists to IDB
     │   └── useSettingsSync.ts           Push/pull settings to Supabase ledger_sync table
     ├── components/
-    │   ├── Login.tsx                    Full-screen login form (email + password, error display)
-    │   ├── Navigation.tsx               Desktop sidebar + mobile bottom tabs + settings sync UI + sign out
-    │   ├── Panel.tsx                    Card container with optional title and action slot
-    │   ├── StatCard.tsx                 Label + large monospace value + optional sub text
-    │   ├── Slider.tsx                   Range input with label, formatted value, optional subtitle
-    │   ├── MiniBar.tsx                  Small horizontal progress bar (value/max)
-    │   └── StatusTag.tsx                Color-coded status badge (draft/sent/paid/overdue/pencil)
+    │   ├── Login.tsx                    Single paper scrap on the desk, wax-seal sign in button
+    │   ├── Navigation.tsx               Desk-toned sidebar + mobile tab bar, active item is a paper tab, sync/refresh/sign out
+    │   ├── Panel.tsx                    Paper scrap card: hand-cut edges, tilt variant, optional washi tape, dense (no tilt) mode
+    │   ├── StatCard.tsx                 Small paper scrap: mono label + Fraunces figure, optional ink circle
+    │   ├── HandCheck.tsx                Hand-drawn checkbox with a check mark that draws on
+    │   ├── Ink.tsx                      PageTitle (Caveat + squiggle), Note (data-driven margin note), InkCircle, Fleuron
+    │   ├── Slider.tsx                   Brass-fastener range input, handwritten value (income forest / expense oxblood)
+    │   ├── MiniBar.tsx                  Thin cut-paper progress strip (value/max)
+    │   └── StatusTag.tsx                Rubber stamp status badge (draft/sent/paid/overdue/pencil), keyed to replay on change
     └── views/
         ├── Dashboard.tsx                YTD income, utilization, invoices, bookings, NW snapshot, runway
         ├── Utilization.tsx              Year selector, monthly breakdown, by-client, by-service-type
@@ -167,6 +184,8 @@ All tables have RLS enabled with `TO authenticated` policies:
 | `useSettingsSync` | `{ push, pull, pushing, pulling, lastPushed, lastPulled, serverUpdatedAt, error }` | `localStorage` for timestamps, Supabase for data |
 
 ## Views
+
+Page titles are handwritten on the desk in lowercase conversational phrasing ("this year so far...", "coming up...", "the planner", "the long view...").
 
 | View | Depends on | Key feature |
 |------|-----------|-------------|

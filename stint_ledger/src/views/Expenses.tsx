@@ -2,6 +2,8 @@ import React, { useMemo, useState, useCallback, useRef } from 'react';
 import type { StintData, AccountBalances } from '../lib/types';
 import { StatCard } from '../components/StatCard';
 import { Panel } from '../components/Panel';
+import { HandCheck } from '../components/HandCheck';
+import { PageTitle } from '../components/Ink';
 import { fmt, currentYear, weekdaysElapsedYTD } from '../lib/helpers';
 import { estimateTaxes, estimateW2Taxes } from '../lib/tax';
 import { CD_DAY_RATE } from '../lib/rates';
@@ -14,15 +16,16 @@ interface Props {
   balances: AccountBalances;
 }
 
+// Category inks from the Field Journal palette
 const CATEGORIES: { id: string; label: string; color: string; dot: string }[] = [
-  { id: 'housing', label: 'Housing', color: 'bg-accent', dot: 'bg-accent' },
-  { id: 'insurance', label: 'Insurance', color: 'bg-purple-400', dot: 'bg-purple-400' },
-  { id: 'utilities', label: 'Utilities', color: 'bg-yellow-400', dot: 'bg-yellow-400' },
-  { id: 'food', label: 'Food', color: 'bg-positive', dot: 'bg-positive' },
-  { id: 'transport', label: 'Transport', color: 'bg-orange-400', dot: 'bg-orange-400' },
-  { id: 'subscriptions', label: 'Subscriptions', color: 'bg-highlight', dot: 'bg-highlight' },
-  { id: 'health', label: 'Health', color: 'bg-red-400', dot: 'bg-red-400' },
-  { id: 'other', label: 'Other', color: 'bg-gray-400', dot: 'bg-gray-400' },
+  { id: 'housing', label: 'Housing', color: 'bg-fern', dot: 'bg-fern' },
+  { id: 'insurance', label: 'Insurance', color: 'bg-inkblue', dot: 'bg-inkblue' },
+  { id: 'utilities', label: 'Utilities', color: 'bg-pencil', dot: 'bg-pencil' },
+  { id: 'food', label: 'Food', color: 'bg-forest', dot: 'bg-forest' },
+  { id: 'transport', label: 'Transport', color: 'bg-clay', dot: 'bg-clay' },
+  { id: 'subscriptions', label: 'Subscriptions', color: 'bg-sagedeep', dot: 'bg-sagedeep' },
+  { id: 'health', label: 'Health', color: 'bg-oxblood', dot: 'bg-oxblood' },
+  { id: 'other', label: 'Other', color: 'bg-ink-dim', dot: 'bg-ink-dim' },
 ];
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -122,7 +125,7 @@ export function Expenses({ data, balances }: Props) {
       if (row) {
         const rect = row.getBoundingClientRect();
         const clone = row.cloneNode(true) as HTMLElement;
-        clone.style.cssText = `position:fixed;top:${rect.top}px;left:${rect.left}px;width:${rect.width}px;z-index:50;opacity:0.9;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,0.4);border-radius:8px;background:#1e1e2e;`;
+        clone.style.cssText = `position:fixed;top:${rect.top}px;left:${rect.left}px;width:${rect.width}px;z-index:50;opacity:0.9;pointer-events:none;box-shadow:0 8px 24px rgba(0,0,0,0.4);border-radius:8px;background:#f3ecdc;`;
         document.body.appendChild(clone);
         ts.clone = clone;
       }
@@ -173,7 +176,7 @@ export function Expenses({ data, balances }: Props) {
   // Pull Planner settings for income/return calculations
   const year = currentYear();
   const plannerDefaults = useMemo(() => {
-    // Floor at the validated CD day rate — Stint settings may lag the rate card
+    // Floor at the validated CD day rate: Stint settings may lag the rate card
     const settingsRate = Math.max(data.settings?.service_rates?.day_rate ?? 0, CD_DAY_RATE);
     const yearEntries = data.timeEntries.filter((e) => e.date.startsWith(String(year)));
     const dayRateDates = new Set(yearEntries.filter((e) => e.service_type === 'day_rate').map((e) => e.date));
@@ -216,7 +219,7 @@ export function Expenses({ data, balances }: Props) {
     [activeRecurring],
   );
 
-  // Planner's health insurance ($$ from Planner settings) — included in summary/simulation
+  // Planner's health insurance ($$ from Planner settings): included in summary/simulation
   // unless the user already has a recurring expense named "health insurance" (avoid double-counting)
   const healthInsFromPlanner = (planner.employmentMode ?? 'freelance') === 'fulltime'
     ? (planner.ftHealthIns ?? 300)
@@ -434,20 +437,20 @@ export function Expenses({ data, balances }: Props) {
   const callout = useMemo(() => {
     if (simulation.depletedAccount) {
       return {
-        color: 'border-negative bg-red-900/30',
+        color: 'callout-bad',
         text: `Warning: ${simulation.depletedAccount} depletes in ${simulation.depletedMonth}`,
         textColor: 'text-negative',
       };
     }
     if (simulation.hysDrawdownPct > 0.3) {
       return {
-        color: 'border-caution bg-yellow-900/30',
-        text: `HYS draws down ${Math.round(simulation.hysDrawdownPct * 100)}% by year end — consider spreading one-time expenses`,
+        color: 'callout-warn',
+        text: `HYS draws down ${Math.round(simulation.hysDrawdownPct * 100)}% by year end. Consider spreading one-time expenses`,
         textColor: 'text-caution',
       };
     }
     return {
-      color: 'border-positive bg-emerald-900/30',
+      color: 'callout-good',
       text: 'Your finances comfortably absorb the modeled expenses',
       textColor: 'text-positive',
     };
@@ -475,19 +478,19 @@ export function Expenses({ data, balances }: Props) {
 
     let calloutColor: string, calloutText: string, calloutTextColor: string;
     if (depleted) {
-      calloutColor = 'border-negative bg-red-900/30';
+      calloutColor = 'callout-bad';
       calloutText = `Warning: One-time expenses (${fmt(total)}) exceed all accessible savings`;
       calloutTextColor = 'text-negative';
     } else if (hys <= 0 && balances.hys > 0) {
-      calloutColor = 'border-negative bg-red-900/30';
+      calloutColor = 'callout-bad';
       calloutText = `After one-time expenses (${fmt(total)}), HYS fully depleted`;
       calloutTextColor = 'text-negative';
     } else if (hysDrawdownPct > 0.3) {
-      calloutColor = 'border-caution bg-yellow-900/30';
+      calloutColor = 'callout-warn';
       calloutText = `After one-time expenses (${fmt(total)}), HYS would be ${fmt(hys)} (down ${Math.round(hysDrawdownPct * 100)}%)`;
       calloutTextColor = 'text-caution';
     } else {
-      calloutColor = 'border-positive bg-emerald-900/30';
+      calloutColor = 'callout-good';
       calloutText = `After one-time expenses (${fmt(total)}), HYS would be ${fmt(hys)}`;
       calloutTextColor = 'text-positive';
     }
@@ -554,20 +557,17 @@ export function Expenses({ data, balances }: Props) {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-5">
       {/* Title row */}
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-white">Expense Model</h1>
-        <button
-          onClick={reset}
-          className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
-        >
+      <div className="flex items-end justify-between gap-3">
+        <PageTitle>the expense model</PageTitle>
+        <button onClick={reset} className="btn-link on-desk pb-1">
           Reset defaults
         </button>
       </div>
 
       {/* 1. Income Summary (read-only from Planner) */}
-      <Panel title={`Income Summary — ${incomeCalc.label}`}>
+      <Panel title={`Income Summary: ${incomeCalc.label}`} tape="fern">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <StatCard label="Net Take-Home" value={fmt(incomeCalc.netMonthly)} color="text-positive" sub="/mo after tax" />
           {planner.fullFinancialPicture && (
@@ -588,16 +588,16 @@ export function Expenses({ data, balances }: Props) {
       </Panel>
 
       {/* 2. Recurring Expenses */}
-      <Panel title="Recurring Expenses" action={
+      <Panel title="Recurring Expenses" dense action={
         <button
           onClick={() => addRecurring({ name: 'New expense', amount: 0, category: 'other' })}
-          className="text-xs text-accent hover:text-accent/80 transition-colors"
+          className="btn-stamp fern"
         >
           + Add expense
         </button>
       }>
         <div className="space-y-2">
-          <div className="hidden md:grid grid-cols-[24px_1fr_1fr_120px_28px_32px] gap-2 text-[10px] text-gray-600 uppercase tracking-wide px-1">
+          <div className="hidden md:grid grid-cols-[24px_1fr_1fr_120px_28px_32px] gap-2 mono-label ledger-head pb-1 px-1">
             <span />
             <span>Category</span>
             <span>Name</span>
@@ -637,28 +637,28 @@ export function Expenses({ data, balances }: Props) {
           </div>
 
           {model.recurring.length > 0 && (
-            <div className="flex justify-between items-center pt-2 border-t border-surface-3 px-1">
-              <span className="text-xs text-gray-500">Total recurring</span>
-              <span className="font-mono text-sm font-semibold text-white">{fmt(totalMonthlyRecurring)}/mo</span>
+            <div className="ledger-total flex justify-between items-center pt-2 px-1">
+              <span className="mono-label">Total recurring</span>
+              <span className="figure text-sm">{fmt(totalMonthlyRecurring)}/mo</span>
             </div>
           )}
         </div>
       </Panel>
 
       {/* 3. One-Time Expenses */}
-      <Panel title="One-Time Expenses" action={
+      <Panel title="One-Time Expenses" dense action={
         <button
           onClick={() => addOneTime({ name: 'New expense', amount: 0, month: new Date().getMonth() + 1 })}
-          className="text-xs text-accent hover:text-accent/80 transition-colors"
+          className="btn-stamp fern"
         >
           + Add expense
         </button>
       }>
         {sortedOneTime.length === 0 ? (
-          <p className="text-xs text-gray-600">No one-time expenses yet.</p>
+          <p className="text-xs text-ink-dim">No one-time expenses yet.</p>
         ) : (
           <div className="space-y-2">
-            <div className="hidden md:grid grid-cols-[80px_1fr_120px_28px_32px] gap-2 text-[10px] text-gray-600 uppercase tracking-wide px-1">
+            <div className="hidden md:grid grid-cols-[80px_1fr_120px_28px_32px] gap-2 mono-label ledger-head pb-1 px-1">
               <span>Month</span>
               <span>Name</span>
               <span className="text-right">Amount</span>
@@ -675,9 +675,9 @@ export function Expenses({ data, balances }: Props) {
               />
             ))}
 
-            <div className="flex justify-between items-center pt-2 border-t border-surface-3 px-1">
-              <span className="text-xs text-gray-500">Total one-time</span>
-              <span className="font-mono text-sm font-semibold text-white">
+            <div className="ledger-total flex justify-between items-center pt-2 px-1">
+              <span className="mono-label">Total one-time</span>
+              <span className="figure text-sm">
                 {fmt(activeOneTimeAnnual)}
               </span>
             </div>
@@ -700,7 +700,7 @@ export function Expenses({ data, balances }: Props) {
           <StatCard label="Highest Month" value={fmt(highestMonth.total + effectiveHealthIns)} color="text-negative" sub={highestMonth.label} />
         </div>
         {totalMutedMonthly > 0 && (
-          <div className="text-xs text-gray-600 mt-3 px-1">
+          <div className="text-xs font-mono text-ink-dim mt-3 px-1">
             Muting {fmt(Math.round(totalMutedMonthly))}/mo in expenses
             {mutedMonthlyRecurring > 0 && mutedOneTimeTotal > 0
               ? ` (${fmt(mutedMonthlyRecurring)}/mo recurring + ${fmt(mutedOneTimeTotal)} one-time)`
@@ -711,21 +711,14 @@ export function Expenses({ data, balances }: Props) {
 
       {/* 5. Financial Impact */}
       <Panel
-        title={fullYear ? 'Financial Impact — Year-End Projection' : 'Financial Impact — One-Time Expenses'}
+        title={fullYear ? 'Financial Impact: Year-End Projection' : 'Financial Impact: One-Time Expenses'}
+        dense
         action={
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <div className="relative">
-              <input
-                type="checkbox"
-                checked={fullYear}
-                onChange={(e) => setFullYearProjection(e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-8 h-4 bg-surface-3 rounded-full peer-checked:bg-accent/60 transition-colors" />
-              <div className="absolute left-0.5 top-0.5 w-3 h-3 bg-gray-500 rounded-full peer-checked:translate-x-4 peer-checked:bg-white transition-all" />
-            </div>
-            <span className="text-xs text-gray-400">{fullYear ? 'Full year projection' : 'One-time impact only'}</span>
-          </label>
+          <HandCheck
+            checked={fullYear}
+            onChange={(v) => setFullYearProjection(v)}
+            label={<span className="text-xs text-ink-3">{fullYear ? 'Full year projection' : 'One-time impact only'}</span>}
+          />
         }
       >
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
@@ -746,36 +739,36 @@ export function Expenses({ data, balances }: Props) {
 
         {fullYear && (
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="ledger">
               <thead>
-                <tr className="text-gray-500 text-[10px] uppercase tracking-wide">
-                  <th className="text-left py-1">Month</th>
-                  <th className="text-right py-1">Income</th>
-                  <th className="text-right py-1">Recurring</th>
-                  <th className="text-right py-1">One-Time</th>
-                  <th className="text-right py-1">Net</th>
-                  <th className="text-right py-1">HYS</th>
-                  <th className="text-right py-1 hidden md:table-cell">Accessible</th>
-                  <th className="text-right py-1 hidden md:table-cell">Total NW</th>
+                <tr>
+                  <th className="text-left">Month</th>
+                  <th className="text-right">Income</th>
+                  <th className="text-right">Recurring</th>
+                  <th className="text-right">One-Time</th>
+                  <th className="text-right">Net</th>
+                  <th className="text-right">HYS</th>
+                  <th className="text-right hidden md:table-cell">Accessible</th>
+                  <th className="text-right hidden md:table-cell">Total NW</th>
                 </tr>
               </thead>
               <tbody>
                 {simulation.rows.map((r) => (
-                  <tr key={r.month} className="border-t border-surface-3">
-                    <td className="py-1.5 text-gray-300">{r.label}</td>
-                    <td className="py-1.5 text-right font-mono text-gray-400">{fmt(r.income)}</td>
-                    <td className="py-1.5 text-right font-mono text-negative">{fmt(r.recurring)}</td>
-                    <td className={`py-1.5 text-right font-mono ${r.oneTime > 0 ? 'text-caution' : 'text-gray-600'}`}>
-                      {r.oneTime > 0 ? fmt(r.oneTime) : '—'}
+                  <tr key={r.month}>
+                    <td className="text-ink-2 font-sans">{r.label}</td>
+                    <td className="text-right text-ink-3">{fmt(r.income)}</td>
+                    <td className="text-right text-negative">{fmt(r.recurring)}</td>
+                    <td className={`text-right ${r.oneTime > 0 ? 'text-caution' : 'text-ink-dim'}`}>
+                      {r.oneTime > 0 ? fmt(r.oneTime) : '–'}
                     </td>
-                    <td className={`py-1.5 text-right font-mono font-medium ${r.net >= 0 ? 'text-positive' : 'text-negative'}`}>
+                    <td className={`text-right font-medium ${r.net >= 0 ? 'text-positive' : 'text-negative'}`}>
                       {fmt(r.net)}
                     </td>
-                    <td className={`py-1.5 text-right font-mono ${r.hys < balances.hys * 0.5 ? 'text-caution' : 'text-gray-300'}`}>
+                    <td className={`text-right ${r.hys < balances.hys * 0.5 ? 'text-caution' : 'text-ink-2'}`}>
                       {fmt(r.hys)}
                     </td>
-                    <td className="py-1.5 text-right font-mono text-gray-400 hidden md:table-cell">{fmt(r.accessible)}</td>
-                    <td className="py-1.5 text-right font-mono text-gray-300 hidden md:table-cell">{fmt(r.totalNW)}</td>
+                    <td className="text-right text-ink-3 hidden md:table-cell">{fmt(r.accessible)}</td>
+                    <td className="text-right text-ink-2 hidden md:table-cell">{fmt(r.totalNW)}</td>
                   </tr>
                 ))}
               </tbody>
@@ -783,19 +776,20 @@ export function Expenses({ data, balances }: Props) {
           </div>
         )}
 
-        <div className={`${fullYear ? 'mt-4' : ''} rounded-lg p-3 border-l-4 ${impact.calloutColor}`}>
-          <p className={`text-sm font-medium ${impact.calloutTextColor}`}>{impact.calloutText}</p>
+        <div className={`callout ${fullYear ? 'mt-4' : ''} ${impact.calloutColor}`}>
+          {impact.calloutText}
         </div>
       </Panel>
 
       {/* 6. Monthly Timeline */}
-      <Panel title="Monthly Timeline">
-        <div className="flex items-end gap-1 h-40">
-          {monthlyTimeline.map((m) => {
+      <Panel title="Monthly Timeline" tape="clay" tapeSide="right">
+        <div className="flex items-end gap-1.5 h-40">
+          {monthlyTimeline.map((m, bi) => {
             const recurringPct = maxMonthTotal > 0 ? (m.recurring / maxMonthTotal) * 100 : 0;
             const oneTimePct = maxMonthTotal > 0 ? (m.oneTime / maxMonthTotal) * 100 : 0;
+            const barVar = { '--b': bi } as React.CSSProperties;
             return (
-              <div key={m.label} className="flex-1 flex flex-col items-center gap-1 h-full justify-end">
+              <div key={m.label} className="pbar-col flex-1 flex flex-col items-center gap-1 h-full justify-end">
                 <div
                   className="w-full flex flex-col justify-end"
                   style={{ height: `${recurringPct + oneTimePct}%` }}
@@ -803,30 +797,30 @@ export function Expenses({ data, balances }: Props) {
                 >
                   {m.oneTime > 0 && (
                     <div
-                      className="w-full bg-caution/60 rounded-t"
-                      style={{ height: `${(oneTimePct / (recurringPct + oneTimePct)) * 100}%`, minHeight: '2px' }}
+                      className="pbar pbar-stack bg-pencil"
+                      style={{ height: `${(oneTimePct / (recurringPct + oneTimePct)) * 100}%`, minHeight: '2px', ...barVar }}
                     />
                   )}
                   <div
-                    className={`w-full bg-negative ${m.oneTime > 0 ? '' : 'rounded-t'} rounded-b`}
-                    style={{ height: `${(recurringPct / (recurringPct + oneTimePct)) * 100}%`, minHeight: '2px' }}
+                    className="pbar pbar-stack bg-clay"
+                    style={{ height: `${(recurringPct / (recurringPct + oneTimePct)) * 100}%`, minHeight: '2px', ...barVar }}
                   />
                 </div>
-                <span className="text-[10px] text-gray-600">{m.label}</span>
+                <span className="text-[10px] font-mono text-ink-dim">{m.label}</span>
               </div>
             );
           })}
         </div>
-        <div className="flex items-center gap-3 mt-3 text-[10px] text-gray-500">
-          <span className="flex items-center gap-1"><span className="w-3 h-2 bg-negative rounded-sm inline-block" /> Recurring</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-2 bg-caution/60 rounded-sm inline-block" /> One-time</span>
+        <div className="flex items-center gap-3 mt-3 text-[10px] font-mono text-ink-dim">
+          <span className="flex items-center gap-1"><span className="w-3 h-2 bg-clay rounded-sm inline-block" /> Recurring</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-2 bg-pencil rounded-sm inline-block" /> One-time</span>
         </div>
       </Panel>
 
       {/* 7. Category Breakdown */}
       {categoryBreakdown.length > 0 && (
         <Panel title="Category Breakdown">
-          <div className="h-6 rounded-full overflow-hidden flex">
+          <div className="alloc">
             {categoryBreakdown.map((c) => (
               <div
                 key={c.id}
@@ -838,7 +832,7 @@ export function Expenses({ data, balances }: Props) {
           </div>
           <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3">
             {categoryBreakdown.map((c) => (
-              <span key={c.id} className="flex items-center gap-1.5 text-xs text-gray-400">
+              <span key={c.id} className="flex items-center gap-1.5 text-xs font-mono text-ink-3">
                 <span className={`w-2 h-2 rounded-full ${c.dot}`} />
                 {c.label} {fmt(c.amount)} ({(c.pct * 100).toFixed(0)}%)
               </span>
@@ -862,14 +856,14 @@ function BalanceCard({ label, current, projected, color, warn, danger }: {
 }) {
   const delta = projected - current;
   const up = delta >= 0;
-  const valueColor = danger ? 'text-negative' : warn ? 'text-caution' : color ?? 'text-white';
+  const valueColor = danger ? 'text-negative' : warn ? 'text-caution' : color ?? 'text-ink';
   return (
-    <div className="bg-surface-2 rounded-lg p-3">
-      <div className="text-[10px] text-gray-500 uppercase tracking-wide mb-1">{label}</div>
+    <div className="scrap">
+      <div className="scrap-label">{label}</div>
       <div className="flex items-baseline gap-1.5">
-        <span className="font-mono text-xs text-gray-500">{fmt(current)}</span>
-        <span className="text-gray-600">→</span>
-        <span className={`font-mono text-sm font-semibold ${valueColor}`}>{fmt(projected)}</span>
+        <span className="font-mono text-xs text-ink-dim">{fmt(current)}</span>
+        <span className="text-ink-dim">→</span>
+        <span className={`figure text-base ${valueColor}`}>{fmt(projected)}</span>
       </div>
       <div className={`text-xs font-mono mt-0.5 ${up ? 'text-positive' : 'text-negative'}`}>
         {up ? '↑' : '↓'} {fmt(delta)}
@@ -893,7 +887,7 @@ function RecurringRow({ expense, onUpdate, onRemove, onTouchStart, onTouchMove, 
   return (
     <div className={`grid grid-cols-[24px_1fr_1fr_120px_28px_32px] gap-2 items-center px-1 ${muted ? 'opacity-40' : ''}`}>
       <div
-        className="flex items-center justify-center cursor-grab active:cursor-grabbing text-gray-600 hover:text-gray-400 touch-none select-none"
+        className="flex items-center justify-center cursor-grab active:cursor-grabbing text-ink-dim hover:text-ink-3 touch-none select-none"
         title="Drag to reorder"
         onTouchStart={onTouchStart}
         onTouchMove={onTouchMove}
@@ -910,10 +904,10 @@ function RecurringRow({ expense, onUpdate, onRemove, onTouchStart, onTouchMove, 
         <select
           value={expense.category}
           onChange={(e) => onUpdate({ category: e.target.value })}
-          className="bg-surface-2 text-xs text-gray-300 border border-surface-3 rounded focus:outline-none focus:border-accent cursor-pointer truncate w-full py-0.5"
+          className="text-xs cursor-pointer truncate w-full py-0.5 px-1 font-sans"
         >
           {CATEGORIES.map(c => (
-            <option key={c.id} value={c.id} className="bg-surface-2 text-gray-200">{c.label}</option>
+            <option key={c.id} value={c.id}>{c.label}</option>
           ))}
         </select>
       </div>
@@ -921,27 +915,27 @@ function RecurringRow({ expense, onUpdate, onRemove, onTouchStart, onTouchMove, 
         type="text"
         value={expense.name}
         onChange={(e) => onUpdate({ name: e.target.value })}
-        className={`bg-transparent text-sm focus:outline-none focus:bg-surface-3 rounded px-1 py-0.5 truncate ${muted ? 'text-gray-500 line-through' : 'text-gray-200'}`}
+        className={`bg-transparent text-sm font-sans px-1 py-0.5 truncate ${muted ? 'text-ink-dim line-through' : 'text-ink'}`}
       />
       <div className="relative">
-        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-mono text-sm">$</span>
+        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-dim font-mono text-sm">$</span>
         <input
           type="number"
           value={expense.amount}
           onChange={(e) => onUpdate({ amount: Number(e.target.value) })}
-          className="w-full bg-transparent border border-transparent focus:border-surface-3 focus:bg-surface-3 rounded px-2 py-0.5 pl-6 font-mono text-sm text-gray-200 text-right focus:outline-none"
+          className="w-full bg-transparent px-2 py-0.5 pl-6 text-sm text-right"
         />
       </div>
       <button
         onClick={() => onUpdate({ muted: !muted })}
-        className={`text-sm transition-colors w-7 h-7 flex items-center justify-center rounded ${muted ? 'text-gray-600 hover:text-gray-400' : 'text-gray-500 hover:text-gray-300'}`}
+        className={`text-sm transition-colors w-7 h-7 flex items-center justify-center rounded ${muted ? 'text-ink-dim hover:text-ink-3' : 'text-ink-3 hover:text-ink'}`}
         title={muted ? 'Unmute' : 'Mute'}
       >
         {muted ? '◌' : '◉'}
       </button>
       <button
         onClick={onRemove}
-        className="text-gray-600 hover:text-negative text-sm transition-colors w-8 h-8 flex items-center justify-center"
+        className="text-ink-dim hover:text-clay text-sm transition-colors w-8 h-8 flex items-center justify-center"
         title="Remove"
       >
         ×
@@ -961,37 +955,37 @@ function OneTimeRow({ expense, onUpdate, onRemove }: {
       <select
         value={expense.month}
         onChange={(e) => onUpdate({ month: Number(e.target.value) })}
-        className="bg-surface-2 text-xs text-gray-300 border border-surface-3 rounded focus:outline-none focus:border-accent cursor-pointer py-0.5"
+        className="text-xs cursor-pointer py-0.5 px-1 font-sans"
       >
         {MONTH_LABELS.map((label, i) => (
-          <option key={i + 1} value={i + 1} className="bg-surface-2 text-gray-200">{label}</option>
+          <option key={i + 1} value={i + 1}>{label}</option>
         ))}
       </select>
       <input
         type="text"
         value={expense.name}
         onChange={(e) => onUpdate({ name: e.target.value })}
-        className={`bg-transparent text-sm focus:outline-none focus:bg-surface-3 rounded px-1 py-0.5 truncate ${muted ? 'text-gray-500 line-through' : 'text-gray-200'}`}
+        className={`bg-transparent text-sm font-sans px-1 py-0.5 truncate ${muted ? 'text-ink-dim line-through' : 'text-ink'}`}
       />
       <div className="relative">
-        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-500 font-mono text-sm">$</span>
+        <span className="absolute left-2 top-1/2 -translate-y-1/2 text-ink-dim font-mono text-sm">$</span>
         <input
           type="number"
           value={expense.amount}
           onChange={(e) => onUpdate({ amount: Number(e.target.value) })}
-          className="w-full bg-transparent border border-transparent focus:border-surface-3 focus:bg-surface-3 rounded px-2 py-0.5 pl-6 font-mono text-sm text-gray-200 text-right focus:outline-none"
+          className="w-full bg-transparent px-2 py-0.5 pl-6 text-sm text-right"
         />
       </div>
       <button
         onClick={() => onUpdate({ muted: !muted })}
-        className={`text-sm transition-colors w-7 h-7 flex items-center justify-center rounded ${muted ? 'text-gray-600 hover:text-gray-400' : 'text-gray-500 hover:text-gray-300'}`}
+        className={`text-sm transition-colors w-7 h-7 flex items-center justify-center rounded ${muted ? 'text-ink-dim hover:text-ink-3' : 'text-ink-3 hover:text-ink'}`}
         title={muted ? 'Unmute' : 'Mute'}
       >
         {muted ? '◌' : '◉'}
       </button>
       <button
         onClick={onRemove}
-        className="text-gray-600 hover:text-negative text-sm transition-colors w-8 h-8 flex items-center justify-center"
+        className="text-ink-dim hover:text-clay text-sm transition-colors w-8 h-8 flex items-center justify-center"
         title="Remove"
       >
         ×

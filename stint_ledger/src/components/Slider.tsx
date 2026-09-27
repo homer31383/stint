@@ -9,14 +9,16 @@ interface SliderProps {
   format: (v: number) => string;
   onChange: (v: number) => void;
   sub?: string;
+  /** Handwritten value color: forest for income-side, oxblood for expense-side. */
+  tone?: 'income' | 'expense' | 'neutral';
 }
 
-export function Slider({ label, value, min, max, step, format, onChange, sub }: SliderProps) {
+export function Slider({ label, value, min, max, step, format, onChange, sub, tone = 'neutral' }: SliderProps) {
   return (
     <div className="mb-4">
-      <div className="flex items-center justify-between mb-1">
-        <span className="text-sm text-gray-400">{label}</span>
-        <span className="font-mono text-sm text-white font-medium">{format(value)}</span>
+      <div className="flex items-baseline justify-between mb-0.5">
+        <span className="text-sm text-ink-3">{label}</span>
+        <span className={`hand-value ${tone === 'neutral' ? '' : tone}`}>{format(value)}</span>
       </div>
       <input
         type="range"
@@ -27,7 +29,7 @@ export function Slider({ label, value, min, max, step, format, onChange, sub }: 
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-full"
       />
-      {sub && <div className="text-xs text-gray-500 mt-1">{sub}</div>}
+      {sub && <div className="text-[11px] font-mono text-ink-dim mt-0.5">{sub}</div>}
     </div>
   );
 }

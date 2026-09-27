@@ -7,11 +7,12 @@ interface MiniBarProps {
   className?: string;
 }
 
-export function MiniBar({ value, max, color = 'bg-accent', className = '' }: MiniBarProps) {
+// A thin cut-paper strip that fills left to right.
+export function MiniBar({ value, max, color = 'bg-fern', className = '' }: MiniBarProps) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0;
   return (
-    <div className={`h-2 bg-surface-3 rounded-full overflow-hidden ${className}`}>
-      <div className={`h-full rounded-full ${color}`} style={{ width: `${pct}%` }} />
+    <div className={`pstrip ${className}`}>
+      <div className={`pstrip-fill ${color}`} style={{ width: `${pct}%` }} />
     </div>
   );
 }

@@ -1,6 +1,7 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import type { StintData, AccountBalances, DetailedBalances } from '../lib/types';
 import { Panel } from '../components/Panel';
+import { PageTitle } from '../components/Ink';
 import { useExportProfile, DEFAULT_PROFILE_TEXT, DEFAULT_QUESTIONS_TEXT } from '../hooks/useExportProfile';
 import { useExpenseModel } from '../hooks/useExpenseModel';
 import { usePlannerSettings, type PlannerSettings } from '../hooks/usePlannerSettings';
@@ -23,7 +24,7 @@ function makePlannerDefaults(data: StintData): PlannerSettings {
   const year = currentYear();
   const yearStr = String(year);
   const yearEntries = data.timeEntries.filter((e) => e.date.startsWith(yearStr));
-  // Floor at the validated CD day rate — Stint settings may lag the rate card
+  // Floor at the validated CD day rate: Stint settings may lag the rate card
   const settingsRate = Math.max(data.settings?.service_rates?.day_rate ?? 0, CD_DAY_RATE);
   const dayRateDates = new Set(yearEntries.filter((e) => e.service_type === 'day_rate').map((e) => e.date));
   const weekdays = weekdaysElapsedYTD(year);
@@ -115,52 +116,46 @@ export function Export({ data, balances, detailed }: Props) {
     : null;
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between flex-wrap gap-2">
-        <h1 className="text-xl font-bold text-white">Export for Analysis</h1>
+    <div className="space-y-5">
+      <div className="flex items-end justify-between flex-wrap gap-2">
+        <PageTitle>export for analysis</PageTitle>
         {lastExportedStr && (
-          <span className="text-xs text-gray-500">Last exported: <span className="font-mono">{lastExportedStr}</span></span>
+          <span className="text-xs fj-desk-dim pb-1">Last exported: <span className="font-mono">{lastExportedStr}</span></span>
         )}
       </div>
 
-      <p className="text-sm text-gray-400">
+      <p className="text-sm fj-desk-dim max-w-2xl">
         Generate a comprehensive Markdown briefing of your current finances. Upload the file to Claude for interactive analysis.
         Sections 1 and 11 are editable; everything else is auto-generated from live data each time you click <em>Generate</em>.
       </p>
 
       {/* Section 1: Profile (editable) */}
-      <Panel title="1. Profile (editable)">
+      <Panel title="1. Profile (editable)" dense tape="kraft">
         <textarea
           value={profile.profileText}
           onChange={(e) => updateProfileText(e.target.value)}
           rows={10}
-          className="w-full bg-surface-3 border border-surface-3 rounded px-3 py-2 text-sm text-gray-200 font-mono focus:outline-none focus:border-accent resize-y"
+          className="w-full px-3 py-2 text-sm resize-y"
         />
         <div className="flex items-center justify-between mt-2 text-[11px]">
-          <span className="text-gray-600">Free-form Markdown. This section appears at the top of the briefing.</span>
-          <button
-            onClick={() => updateProfileText(DEFAULT_PROFILE_TEXT)}
-            className="text-gray-500 hover:text-gray-300 transition-colors"
-          >
+          <span className="text-ink-dim">Free-form Markdown. This section appears at the top of the briefing.</span>
+          <button onClick={() => updateProfileText(DEFAULT_PROFILE_TEXT)} className="btn-link">
             Reset profile to default
           </button>
         </div>
       </Panel>
 
       {/* Section 11: Questions (editable) */}
-      <Panel title="11. Questions & Focus Areas (editable)">
+      <Panel title="11. Questions & Focus Areas (editable)" dense>
         <textarea
           value={profile.questionsText}
           onChange={(e) => updateQuestionsText(e.target.value)}
           rows={8}
-          className="w-full bg-surface-3 border border-surface-3 rounded px-3 py-2 text-sm text-gray-200 font-mono focus:outline-none focus:border-accent resize-y"
+          className="w-full px-3 py-2 text-sm resize-y"
         />
         <div className="flex items-center justify-between mt-2 text-[11px]">
-          <span className="text-gray-600">One per line. Edit, add, or remove freely.</span>
-          <button
-            onClick={() => updateQuestionsText(DEFAULT_QUESTIONS_TEXT)}
-            className="text-gray-500 hover:text-gray-300 transition-colors"
-          >
+          <span className="text-ink-dim">One per line. Edit, add, or remove freely.</span>
+          <button onClick={() => updateQuestionsText(DEFAULT_QUESTIONS_TEXT)} className="btn-link">
             Reset questions to default
           </button>
         </div>
@@ -168,25 +163,14 @@ export function Export({ data, balances, detailed }: Props) {
 
       {/* Actions */}
       <Panel title="Actions">
-        <div className="flex flex-wrap gap-2 items-center">
-          <button
-            onClick={generate}
-            className="px-3 py-1.5 text-sm rounded bg-accent text-white hover:bg-accent/80 transition-colors"
-          >
+        <div className="flex flex-wrap gap-3 items-center">
+          <button onClick={generate} className="btn-tag">
             Generate Export
           </button>
-          <button
-            onClick={download}
-            disabled={!generated}
-            className="px-3 py-1.5 text-sm rounded bg-surface-2 text-gray-200 hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
+          <button onClick={download} disabled={!generated} className="btn-stamp fern">
             Download .md
           </button>
-          <button
-            onClick={copy}
-            disabled={!generated}
-            className="px-3 py-1.5 text-sm rounded bg-surface-2 text-gray-200 hover:bg-surface-3 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
+          <button onClick={copy} disabled={!generated} className="btn-stamp fern">
             {copied ? 'Copied!' : 'Copy to Clipboard'}
           </button>
           <button
@@ -199,9 +183,7 @@ export function Export({ data, balances, detailed }: Props) {
                 setTimeout(() => setShowResetConfirm(false), 3000);
               }
             }}
-            className={`ml-auto text-xs transition-colors ${
-              showResetConfirm ? 'text-negative' : 'text-gray-500 hover:text-gray-300'
-            }`}
+            className={`ml-auto btn-link ${showResetConfirm ? 'clay' : ''}`}
             title="Reset both editable sections to defaults"
           >
             {showResetConfirm ? 'Confirm reset?' : 'Reset all editable text'}
@@ -210,13 +192,13 @@ export function Export({ data, balances, detailed }: Props) {
       </Panel>
 
       {/* Preview */}
-      <Panel title={generated ? 'Preview' : 'Preview (click Generate to populate)'}>
+      <Panel title={generated ? 'Preview' : 'Preview (click Generate to populate)'} dense>
         {generated ? (
-          <pre className="text-[11px] text-gray-300 font-mono whitespace-pre-wrap break-words max-h-[70vh] overflow-auto bg-surface-3 p-3 rounded">
+          <pre className="text-[11px] text-ink-2 font-mono whitespace-pre-wrap break-words max-h-[70vh] overflow-auto bg-paper3/60 p-3 rounded">
             {generated}
           </pre>
         ) : (
-          <p className="text-xs text-gray-500">No preview yet. Click <em>Generate Export</em> above to assemble the document from your current data.</p>
+          <p className="text-xs text-ink-dim">No preview yet. Click <em>Generate Export</em> above to assemble the document from your current data.</p>
         )}
       </Panel>
     </div>

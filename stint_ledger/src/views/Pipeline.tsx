@@ -3,6 +3,7 @@ import type { StintData } from '../lib/types';
 import { StatCard } from '../components/StatCard';
 import { Panel } from '../components/Panel';
 import { StatusTag } from '../components/StatusTag';
+import { PageTitle } from '../components/Ink';
 import { fmt, fmtDateShort, weekdaysBetween } from '../lib/helpers';
 
 const PRIORITY_WEIGHTS = [1.0, 0.7, 0.4, 0.2];
@@ -68,26 +69,26 @@ export function Pipeline({ data }: Props) {
   const confirmedRevenue = booked.reduce((s, p) => s + p.value, 0);
 
   const renderRow = (p: (typeof enriched)[0]) => (
-    <div key={p.id} className="flex items-center justify-between py-2 border-b border-surface-3 last:border-0 text-sm">
+    <div key={p.id} className="ledger-row flex items-center justify-between py-2.5 text-sm">
       <div className="min-w-0 flex-1">
-        <div className="text-gray-200 truncate">
+        <div className="text-ink truncate">
           {p.clientName}
-          {p.projectName && <span className="text-gray-500"> · {p.projectName}</span>}
+          {p.projectName && <span className="text-ink-dim"> · {p.projectName}</span>}
         </div>
-        <div className="text-xs text-gray-500 font-mono">
+        <div className="text-xs text-ink-dim font-mono">
           {fmtDateShort(p.start_date)}–{fmtDateShort(p.end_date)} · {p.days}d
         </div>
       </div>
       <div className="flex items-center gap-3 ml-3">
-        <span className="font-mono text-gray-300 text-sm">{fmt(p.value)}</span>
-        <StatusTag status={p.label} />
+        <span className="figure text-sm">{fmt(p.value)}</span>
+        <StatusTag status={p.label} seed={p.id} />
       </div>
     </div>
   );
 
   return (
-    <div className="space-y-4">
-      <h1 className="text-xl font-bold text-white">Pipeline</h1>
+    <div className="space-y-5">
+      <PageTitle>coming up...</PageTitle>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <StatCard label="Booked Days" value={String(bookedDays)} color="text-positive" />
@@ -97,7 +98,7 @@ export function Pipeline({ data }: Props) {
       </div>
 
       {booked.length > 0 && (
-        <Panel title="Booked">
+        <Panel title="Booked" tape="fern">
           {booked.map(renderRow)}
         </Panel>
       )}
@@ -109,14 +110,14 @@ export function Pipeline({ data }: Props) {
       )}
 
       {past.length > 0 && (
-        <Panel title="Recent Past">
+        <Panel title="Recent Past" variant={3}>
           {past.map(renderRow)}
         </Panel>
       )}
 
       {future.length === 0 && past.length === 0 && (
         <Panel>
-          <p className="text-gray-500 text-sm">No pipeline data</p>
+          <p className="text-ink-dim text-sm">No pipeline data</p>
         </Panel>
       )}
     </div>

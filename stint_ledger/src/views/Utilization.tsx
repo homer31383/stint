@@ -3,6 +3,7 @@ import type { StintData } from '../lib/types';
 import { StatCard } from '../components/StatCard';
 import { Panel } from '../components/Panel';
 import { MiniBar } from '../components/MiniBar';
+import { PageTitle } from '../components/Ink';
 import { fmt, fmtPct, currentYear, weekdaysElapsedYTD, monthName } from '../lib/helpers';
 
 interface Props {
@@ -72,15 +73,15 @@ export function Utilization({ data }: Props) {
   const maxMonthlyIncome = Math.max(...stats.monthly.map((m) => m.income), 1);
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-white">Utilization & Income</h1>
-        <div className="flex gap-1">
+    <div className="space-y-5">
+      <div className="flex items-end justify-between gap-3">
+        <PageTitle>utilization & income</PageTitle>
+        <div className="flex gap-2 pb-1">
           {[thisYear, thisYear - 1].map((y) => (
             <button
               key={y}
               onClick={() => setYear(y)}
-              className={`px-3 py-1 text-xs rounded ${year === y ? 'bg-accent text-white' : 'bg-surface-2 text-gray-400'}`}
+              className={`btn-stamp on-desk ${year === y ? 'active' : ''}`}
             >
               {y}
             </button>
@@ -96,26 +97,26 @@ export function Utilization({ data }: Props) {
       </div>
 
       {/* Monthly breakdown */}
-      <Panel title="Monthly Breakdown">
+      <Panel title="Monthly Breakdown" dense tape="kraft" tapeSide="right">
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="ledger">
             <thead>
-              <tr className="text-gray-500 text-xs">
-                <th className="text-left py-1">Month</th>
-                <th className="text-right py-1">Income</th>
-                <th className="text-right py-1">Days</th>
-                <th className="text-right py-1">Util%</th>
-                <th className="w-24 py-1"></th>
+              <tr>
+                <th className="text-left">Month</th>
+                <th className="text-right">Income</th>
+                <th className="text-right">Days</th>
+                <th className="text-right">Util%</th>
+                <th className="w-24"></th>
               </tr>
             </thead>
             <tbody>
               {stats.monthly.filter((m) => m.income > 0 || m.days > 0).map((m) => (
-                <tr key={m.month} className="border-t border-surface-3">
-                  <td className="py-2 text-gray-300">{monthName(m.month)}</td>
-                  <td className="py-2 text-right font-mono text-gray-200">{fmt(m.income)}</td>
-                  <td className="py-2 text-right font-mono text-gray-400">{m.days}</td>
-                  <td className="py-2 text-right font-mono text-gray-400">{fmtPct(m.utilization)}</td>
-                  <td className="py-2 pl-3">
+                <tr key={m.month}>
+                  <td className="text-ink-2 font-sans">{monthName(m.month)}</td>
+                  <td className="text-right text-ink">{fmt(m.income)}</td>
+                  <td className="text-right text-ink-3">{m.days}</td>
+                  <td className="text-right text-ink-3">{fmtPct(m.utilization)}</td>
+                  <td className="pl-3">
                     <MiniBar value={m.income} max={maxMonthlyIncome} />
                   </td>
                 </tr>
@@ -127,13 +128,13 @@ export function Utilization({ data }: Props) {
 
       {/* By client */}
       <Panel title="By Client">
-        <div className="space-y-2">
+        <div>
           {stats.byClient.map((c) => (
-            <div key={c.name} className="flex items-center justify-between text-sm">
-              <span className="text-gray-300">{c.name}</span>
+            <div key={c.name} className="ledger-row flex items-center justify-between py-2 text-sm">
+              <span className="text-ink-2">{c.name}</span>
               <div className="flex items-center gap-4">
-                <span className="text-gray-500 font-mono text-xs">{c.days}d</span>
-                <span className="font-mono text-gray-200 w-24 text-right">{fmt(c.income)}</span>
+                <span className="text-ink-dim font-mono text-xs">{c.days}d</span>
+                <span className="font-mono text-ink w-24 text-right">{fmt(c.income)}</span>
               </div>
             </div>
           ))}
@@ -142,13 +143,13 @@ export function Utilization({ data }: Props) {
 
       {/* By service type */}
       <Panel title="By Service Type">
-        <div className="space-y-2">
+        <div>
           {stats.byService.map((s) => (
-            <div key={s.type} className="flex items-center justify-between text-sm">
-              <span className="text-gray-300 capitalize">{s.type.replace('_', ' ')}</span>
+            <div key={s.type} className="ledger-row flex items-center justify-between py-2 text-sm">
+              <span className="text-ink-2 capitalize">{s.type.replace('_', ' ')}</span>
               <div className="flex items-center gap-4">
-                <span className="text-gray-500 font-mono text-xs">×{s.count}</span>
-                <span className="font-mono text-gray-200 w-24 text-right">{fmt(s.income)}</span>
+                <span className="text-ink-dim font-mono text-xs">×{s.count}</span>
+                <span className="font-mono text-ink w-24 text-right">{fmt(s.income)}</span>
               </div>
             </div>
           ))}

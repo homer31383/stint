@@ -21,6 +21,7 @@ import {
 import { StatCard } from '../components/StatCard';
 import { Panel } from '../components/Panel';
 import { MiniBar } from '../components/MiniBar';
+import { PageTitle } from '../components/Ink';
 import { fmt, fmtPct } from '../lib/helpers';
 import { fetchPrices } from '../lib/prices';
 import { estimateLtcgTax, LTCG_RATE } from '../lib/tax';
@@ -88,7 +89,7 @@ function uuid(): string {
 const GROUPS: AccountGroup[] = [
   {
     title: 'Cash & Checking',
-    color: 'bg-accent',
+    color: 'bg-fern',
     sectionKey: 'cashChecking',
     defaultType: 'checking',
     accounts: [
@@ -100,7 +101,7 @@ const GROUPS: AccountGroup[] = [
   },
   {
     title: 'Credit',
-    color: 'bg-negative',
+    color: 'bg-clay',
     sectionKey: 'credit',
     defaultType: 'ccDebt',
     accounts: [
@@ -110,7 +111,7 @@ const GROUPS: AccountGroup[] = [
   },
   {
     title: 'Savings',
-    color: 'bg-positive',
+    color: 'bg-forest',
     sectionKey: 'savings',
     defaultType: 'hys',
     accounts: [
@@ -122,7 +123,7 @@ const GROUPS: AccountGroup[] = [
   },
   {
     title: 'Non-retirement',
-    color: 'bg-blue-400',
+    color: 'bg-inkblue',
     sectionKey: 'nonRetirement',
     defaultType: 'brokerage',
     accounts: [
@@ -132,7 +133,7 @@ const GROUPS: AccountGroup[] = [
   },
   {
     title: 'Retirement',
-    color: 'bg-retirement',
+    color: 'bg-umber',
     sectionKey: 'retirement',
     defaultType: 'tradIRA',
     accounts: [
@@ -143,7 +144,7 @@ const GROUPS: AccountGroup[] = [
   },
   {
     title: 'Other Investments',
-    color: 'bg-indigo-400',
+    color: 'bg-pencil',
     sectionKey: 'otherInvestments',
     defaultType: 'hsa',
     accounts: [
@@ -158,14 +159,14 @@ const SECTIONS: { heading: string; groups: number[] }[] = [
   { heading: 'Investments', groups: [3, 4, 5] },
 ];
 
-// Allocation segments for the bar — maps aggregated account types to a display segment
+// Allocation segments for the bar: maps aggregated account types to a display segment
 const ALLOC_CONFIG: { label: string; color: string; types: CustomAccountType[]; keys: FixedDetailedKey[] }[] = [
-  { label: 'Cash & Checking', color: 'bg-accent', types: ['checking'], keys: ['advRelationship', 'santanderChecking', 'advantageSavings'] },
-  { label: 'Savings', color: 'bg-positive', types: ['hys', 'moneyMarket'], keys: ['highYieldSavings', 'openbankHYS', 'santanderMM'] },
-  { label: 'Brokerage', color: 'bg-blue-400', types: ['brokerage'], keys: ['nonRetirement'] },
-  { label: 'Traditional IRA', color: 'bg-retirement', types: ['tradIRA'], keys: ['traditionalIRA'] },
-  { label: 'Rollover IRA', color: 'bg-purple-400', types: ['rolloverIRA'], keys: ['rolloverIRA'] },
-  { label: 'HSA', color: 'bg-indigo-400', types: ['hsa'], keys: ['hsa'] },
+  { label: 'Cash & Checking', color: 'bg-fern', types: ['checking'], keys: ['advRelationship', 'santanderChecking', 'advantageSavings'] },
+  { label: 'Savings', color: 'bg-forest', types: ['hys', 'moneyMarket'], keys: ['highYieldSavings', 'openbankHYS', 'santanderMM'] },
+  { label: 'Brokerage', color: 'bg-inkblue', types: ['brokerage'], keys: ['nonRetirement'] },
+  { label: 'Traditional IRA', color: 'bg-umber', types: ['tradIRA'], keys: ['traditionalIRA'] },
+  { label: 'Rollover IRA', color: 'bg-brass', types: ['rolloverIRA'], keys: ['rolloverIRA'] },
+  { label: 'HSA', color: 'bg-pencil', types: ['hsa'], keys: ['hsa'] },
 ];
 
 function fixedValue(d: DetailedBalances, k: FixedAccountKey): number {
@@ -285,7 +286,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
       return;
     }
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      setPriceMsg({ kind: 'warn', text: 'You are offline — showing the last fetched prices.' });
+      setPriceMsg({ kind: 'warn', text: 'You are offline. Showing the last fetched prices.' });
       return;
     }
 
@@ -297,7 +298,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
         if (failed.length === 0) {
           setPriceMsg({ kind: 'warn', text: `No fetchable tickers (skipped: ${skipped.join(', ')}).` });
         } else {
-          setPriceMsg({ kind: 'err', text: 'Could not fetch any prices — kept previous values.' });
+          setPriceMsg({ kind: 'err', text: 'Could not fetch any prices. Kept previous values.' });
         }
         return;
       }
@@ -323,7 +324,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
         setPriceMsg({ kind: 'ok', text: `Updated ${updated} price${updated === 1 ? '' : 's'}.` });
       }
     } catch {
-      setPriceMsg({ kind: 'err', text: 'Price refresh failed — kept previous values.' });
+      setPriceMsg({ kind: 'err', text: 'Price refresh failed. Kept previous values.' });
     } finally {
       setRefreshing(false);
     }
@@ -335,7 +336,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
     const t = rawTicker.trim().toUpperCase();
     if (!t || rowRefreshing.has(t)) return;
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
-      setPriceMsg({ kind: 'warn', text: 'You are offline — showing the last fetched prices.' });
+      setPriceMsg({ kind: 'warn', text: 'You are offline. Showing the last fetched prices.' });
       return;
     }
 
@@ -346,9 +347,9 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
       const p = prices[t];
       if (p == null) {
         if (skipped.includes(t)) {
-          setPriceMsg({ kind: 'warn', text: `${t} is not a quotable symbol — skipped.` });
+          setPriceMsg({ kind: 'warn', text: `${t} is not a quotable symbol. Skipped.` });
         } else {
-          setPriceMsg({ kind: 'err', text: `Could not fetch ${t} — kept previous value.` });
+          setPriceMsg({ kind: 'err', text: `Could not fetch ${t}. Kept previous value.` });
         }
         return;
       }
@@ -364,7 +365,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
       onSave({ ...detailed, holdings, pricesUpdated: now, lastUpdated: now });
       setPriceMsg({ kind: 'ok', text: `${t} updated to $${p.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}.` });
     } catch {
-      setPriceMsg({ kind: 'err', text: `Could not fetch ${t} — kept previous value.` });
+      setPriceMsg({ kind: 'err', text: `Could not fetch ${t}. Kept previous value.` });
     } finally {
       setRowRefreshing(prev => {
         const next = new Set(prev);
@@ -445,7 +446,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
   const totalDebt = fixedDebt + customDebt;
   const debtToAsset = totalAssets > 0 ? totalDebt / totalAssets : 0;
 
-  // Sum of what is currently muted — shown to the user as context
+  // Sum of what is currently muted: shown to the user as context
   const mutedTotal = useMemo(() => {
     let sum = 0;
     for (const key of ALL_FIXED_KEYS) {
@@ -480,34 +481,34 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
     : 'Prices not yet fetched';
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-bold text-white">Net Worth Tracker</h1>
-        <div className="flex items-center gap-3 text-xs">
+    <div className="space-y-5">
+      <div className="flex items-end justify-between gap-3 flex-wrap">
+        <PageTitle>net worth</PageTitle>
+        <div className="flex items-center gap-3 text-xs pb-1">
           {muted.size > 0 && (
-            <span className="text-gray-500">
-              Muted: <span className="font-mono text-gray-400">{fmt(mutedTotal)}</span>
-              <span className="text-gray-600"> ({muted.size} acct{muted.size === 1 ? '' : 's'})</span>
+            <span className="fj-desk-dim">
+              Muted: <span className="font-mono fj-desk-text">{fmt(mutedTotal)}</span>
+              <span> ({muted.size} acct{muted.size === 1 ? '' : 's'})</span>
             </span>
           )}
-          <div className="flex flex-col items-end leading-tight">
-            <span className="text-gray-600">{pricesAsOfStr}</span>
-            {lastUpdatedStr && <span className="text-gray-600">{lastUpdatedStr}</span>}
+          <div className="flex flex-col items-end leading-tight font-mono text-[10px] fj-desk-dim">
+            <span>{pricesAsOfStr}</span>
+            {lastUpdatedStr && <span>{lastUpdatedStr}</span>}
           </div>
           <button
             onClick={refreshPrices}
             disabled={refreshing}
-            className="text-xs text-accent border border-accent/40 rounded px-3 py-1.5 hover:bg-accent/10 transition-colors disabled:opacity-50 disabled:cursor-not-allowed whitespace-nowrap"
+            className="btn-tag"
             title="Fetch current fund/ETF prices and recalculate values"
           >
-            {refreshing ? 'Refreshing…' : '↻ Refresh Prices'}
+            {refreshing ? 'Refreshing' : '↻ Refresh Prices'}
           </button>
         </div>
       </div>
       {priceMsg && (
         <div
-          className={`text-xs ${
-            priceMsg.kind === 'ok' ? 'text-positive' : priceMsg.kind === 'warn' ? 'text-caution' : 'text-negative'
+          className={`text-xs font-mono ${
+            priceMsg.kind === 'ok' ? 'fj-desk-text' : priceMsg.kind === 'warn' ? 'text-kraft' : 'text-clay'
           }`}
         >
           {priceMsg.text}
@@ -534,8 +535,8 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
       </div>
 
       {/* Asset allocation bar */}
-      <Panel title="Asset Allocation">
-        <div className="h-6 rounded-full overflow-hidden flex">
+      <Panel title="Asset Allocation" tape="kraft">
+        <div className="alloc">
           {allocationSegments.map((seg) => (
             <div
               key={seg.label}
@@ -547,7 +548,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
         </div>
         <div className="flex flex-wrap gap-x-4 gap-y-1 mt-3">
           {allocationSegments.map((seg) => (
-            <span key={seg.label} className="flex items-center gap-1.5 text-xs text-gray-400">
+            <span key={seg.label} className="flex items-center gap-1.5 text-xs font-mono text-ink-3">
               <span className={`w-2 h-2 rounded-full ${seg.color}`} />
               {seg.label} {fmtPct(seg.pct, 1)}
             </span>
@@ -557,7 +558,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
 
       {/* Account groups */}
       {SECTIONS.map((section) => (
-        <Panel key={section.heading} title={section.heading}>
+        <Panel key={section.heading} title={section.heading} dense>
           <div className="space-y-5">
             {section.groups.map((gi) => {
               const group = GROUPS[gi];
@@ -574,13 +575,13 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
                   >
                     <div className="flex items-center gap-2">
                       <div className={`w-2 h-2 rounded-full ${group.color}`} />
-                      <span className="text-sm font-medium text-gray-300">{group.title}</span>
-                      <span className="text-[10px] text-gray-600">{isCollapsed ? '▸' : '▾'}</span>
+                      <span className="serif text-sm font-semibold text-ink">{group.title}</span>
+                      <span className="text-[10px] text-ink-dim">{isCollapsed ? '▸' : '▾'}</span>
                     </div>
-                    <span className="font-mono text-sm text-gray-400">{fmt(subtotal)}</span>
+                    <span className="figure text-sm text-ink-3">{fmt(subtotal)}</span>
                   </button>
                   {!isCollapsed && (
-                    <div className="space-y-2 pl-4 border-l border-surface-3 ml-1">
+                    <div className="space-y-2 pl-4 border-l border-dotted border-ink-dim/50 ml-1">
                       {group.accounts.map((acct) => {
                         const isMuted = muted.has(acct.key);
                         const holdingsKey: HoldingsAccountKey | null = isHoldingsKey(acct.key) ? acct.key : null;
@@ -590,31 +591,31 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
                         return (
                           <div key={acct.key}>
                             <div className={`flex items-center gap-2 ${isMuted ? 'opacity-40' : ''}`}>
-                              <label className={`text-xs flex-1 min-w-0 truncate ${isMuted ? 'text-gray-600 line-through' : 'text-gray-500'}`}>
+                              <label className={`text-xs flex-1 min-w-0 truncate ${isMuted ? 'text-ink-dim line-through' : 'text-ink-3'}`}>
                                 {acct.label}
-                                {acct.last4 && <span className="text-gray-600 ml-1">- {acct.last4}</span>}
+                                {acct.last4 && <span className="text-ink-dim font-mono ml-1">- {acct.last4}</span>}
                               </label>
                               {hasHoldings ? (
                                 <div
-                                  className="relative w-36 flex-shrink-0 px-3 py-1 font-mono text-sm text-gray-200 text-right bg-surface-2 border border-surface-3 rounded"
+                                  className="relative w-36 flex-shrink-0 px-3 py-1 font-mono text-sm text-ink text-right bg-paper2/80 border border-dotted border-ink-dim/50 rounded"
                                   title="Computed from holdings (shares × price)"
                                 >
                                   {fmt(computedTotal)}
                                 </div>
                               ) : (
                                 <div className="relative w-36 flex-shrink-0">
-                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-mono text-sm">$</span>
+                                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-dim font-mono text-sm">$</span>
                                   <input
                                     type="number"
                                     value={detailed[acct.key] as number}
                                     onChange={(e) => update(acct.key, Number(e.target.value))}
-                                    className="w-full bg-surface-3 border border-surface-3 rounded px-3 py-1 pl-7 font-mono text-sm text-gray-200 focus:outline-none focus:border-accent text-right"
+                                    className="w-full px-3 py-1 pl-7 text-sm text-right"
                                   />
                                 </div>
                               )}
                               <button
                                 onClick={() => toggleMute(acct.key)}
-                                className={`text-sm w-7 h-7 flex items-center justify-center rounded transition-colors ${isMuted ? 'text-gray-600 hover:text-gray-400' : 'text-gray-500 hover:text-gray-300'}`}
+                                className={`text-sm w-7 h-7 flex items-center justify-center rounded transition-colors ${isMuted ? 'text-ink-dim hover:text-ink-3' : 'text-ink-3 hover:text-ink'}`}
                                 title={isMuted ? 'Unmute account' : 'Mute (exclude from totals)'}
                               >
                                 {isMuted ? '◌' : '◉'}
@@ -643,30 +644,30 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
                               type="text"
                               value={acct.name}
                               onChange={(e) => updateCustom(acct.id, { name: e.target.value })}
-                              className={`text-xs flex-1 min-w-0 bg-transparent border border-transparent focus:bg-surface-3 focus:border-surface-3 rounded px-2 py-1 focus:outline-none focus:border-accent ${isMuted ? 'text-gray-500 line-through' : 'text-gray-300'}`}
+                              className={`text-xs flex-1 min-w-0 bg-transparent font-sans px-2 py-1 ${isMuted ? 'text-ink-dim line-through' : 'text-ink-2'}`}
                             />
                             <select
                               value={acct.type}
                               onChange={(e) => updateCustom(acct.id, { type: e.target.value as CustomAccountType })}
-                              className="bg-surface-2 text-[10px] text-gray-400 border border-surface-3 rounded px-1 py-0.5 focus:outline-none focus:border-accent cursor-pointer"
+                              className="text-[10px] px-1 py-0.5 cursor-pointer"
                               title="Account type determines planner mapping"
                             >
                               {ACCOUNT_TYPE_OPTIONS.map(opt => (
-                                <option key={opt.value} value={opt.value} className="bg-surface-2 text-gray-200">{opt.label}</option>
+                                <option key={opt.value} value={opt.value}>{opt.label}</option>
                               ))}
                             </select>
                             <div className="relative w-36 flex-shrink-0">
-                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-mono text-sm">$</span>
+                              <span className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-dim font-mono text-sm">$</span>
                               <input
                                 type="number"
                                 value={acct.balance}
                                 onChange={(e) => updateCustom(acct.id, { balance: Number(e.target.value) })}
-                                className="w-full bg-surface-3 border border-surface-3 rounded px-3 py-1 pl-7 font-mono text-sm text-gray-200 focus:outline-none focus:border-accent text-right"
+                                className="w-full px-3 py-1 pl-7 text-sm text-right"
                               />
                             </div>
                             <button
                               onClick={() => toggleMute(acct.id)}
-                              className={`text-sm w-7 h-7 flex items-center justify-center rounded transition-colors ${isMuted ? 'text-gray-600 hover:text-gray-400' : 'text-gray-500 hover:text-gray-300'}`}
+                              className={`text-sm w-7 h-7 flex items-center justify-center rounded transition-colors ${isMuted ? 'text-ink-dim hover:text-ink-3' : 'text-ink-3 hover:text-ink'}`}
                               title={isMuted ? 'Unmute account' : 'Mute (exclude from totals)'}
                             >
                               {isMuted ? '◌' : '◉'}
@@ -682,7 +683,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
                                 }
                               }}
                               className={`text-xs w-6 h-6 flex items-center justify-center rounded transition-colors ${
-                                deleteConfirm === acct.id ? 'text-negative' : 'text-gray-600 hover:text-negative'
+                                deleteConfirm === acct.id ? 'text-clay' : 'text-ink-dim hover:text-clay'
                               }`}
                               title={deleteConfirm === acct.id ? 'Confirm delete' : 'Delete custom account'}
                             >
@@ -699,19 +700,19 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
                             autoFocus
                             value={draft.name}
                             onChange={(e) => updateDraft(group.sectionKey, { name: e.target.value })}
-                            className="text-xs text-gray-200 flex-1 min-w-0 bg-surface-3 border border-surface-3 rounded px-2 py-1 focus:outline-none focus:border-accent"
+                            className="text-xs flex-1 min-w-0 px-2 py-1 font-sans"
                           />
                           <select
                             value={draft.type}
                             onChange={(e) => updateDraft(group.sectionKey, { type: e.target.value as CustomAccountType })}
-                            className="bg-surface-2 text-[10px] text-gray-300 border border-surface-3 rounded px-1 py-0.5 focus:outline-none focus:border-accent cursor-pointer"
+                            className="text-[10px] px-1 py-0.5 cursor-pointer"
                           >
                             {ACCOUNT_TYPE_OPTIONS.map(opt => (
-                              <option key={opt.value} value={opt.value} className="bg-surface-2 text-gray-200">{opt.label}</option>
+                              <option key={opt.value} value={opt.value}>{opt.label}</option>
                             ))}
                           </select>
                           <div className="relative w-32 flex-shrink-0">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 font-mono text-sm">$</span>
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-ink-dim font-mono text-sm">$</span>
                             <input
                               type="number"
                               placeholder="0"
@@ -721,18 +722,18 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
                                 if (e.key === 'Enter') commitDraft(group.sectionKey);
                                 if (e.key === 'Escape') cancelDraft(group.sectionKey);
                               }}
-                              className="w-full bg-surface-3 border border-surface-3 rounded px-3 py-1 pl-7 font-mono text-sm text-gray-200 focus:outline-none focus:border-accent text-right"
+                              className="w-full px-3 py-1 pl-7 text-sm text-right"
                             />
                           </div>
                           <button
                             onClick={() => commitDraft(group.sectionKey)}
-                            className="text-xs text-positive border border-positive/40 rounded px-2 py-1 hover:bg-positive/10 transition-colors"
+                            className="btn-stamp fern"
                           >
                             Save
                           </button>
                           <button
                             onClick={() => cancelDraft(group.sectionKey)}
-                            className="text-xs text-gray-500 hover:text-gray-300 transition-colors"
+                            className="btn-link"
                           >
                             Cancel
                           </button>
@@ -740,7 +741,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
                       ) : (
                         <button
                           onClick={() => startDraft(group.sectionKey, group.defaultType)}
-                          className="text-[11px] text-accent hover:text-accent/80 transition-colors pt-1"
+                          className="btn-link fern pt-1"
                         >
                           + Add account
                         </button>
@@ -756,17 +757,17 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
 
       {/* Runway & FI */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        <Panel title="Liquid Runway">
-          <div className="text-3xl font-mono font-bold text-white mb-1">{Math.floor(runway)} months</div>
-          <p className="text-xs text-gray-500">Liquid assets ({fmt(liquidAssets)}) ÷ monthly expenses ({fmt(monthlyExpenses)})</p>
+        <Panel title="Liquid Runway" variant={2}>
+          <div className="figure text-3xl mb-1">{Math.floor(runway)} months</div>
+          <p className="text-xs font-mono text-ink-dim">Liquid assets ({fmt(liquidAssets)}) ÷ monthly expenses ({fmt(monthlyExpenses)})</p>
         </Panel>
 
-        <Panel title="FI Progress">
+        <Panel title="FI Progress" variant={4} tape="fern" tapeSide="right">
           <div className="flex items-center gap-3 mb-2">
-            <div className="text-3xl font-mono font-bold text-white">{fmtPct(Math.min(fiProgress, 1), 1)}</div>
-            <div className="text-xs text-gray-500">of {fmt(fiTarget)} target<br />(25× annual expenses)</div>
+            <div className="figure text-3xl">{fmtPct(Math.min(fiProgress, 1), 1)}</div>
+            <div className="text-xs font-mono text-ink-dim">of {fmt(fiTarget)} target<br />(25× annual expenses)</div>
           </div>
-          <MiniBar value={Math.min(fiProgress, 1)} max={1} color="bg-positive" />
+          <MiniBar value={Math.min(fiProgress, 1)} max={1} color="bg-forest" />
         </Panel>
       </div>
     </div>
@@ -802,7 +803,7 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
       <div className="pl-2 mt-1 mb-1">
         <button
           onClick={onAdd}
-          className="text-[11px] text-accent hover:text-accent/80 transition-colors"
+          className="btn-link fern"
         >
           + Add holding
         </button>
@@ -814,24 +815,24 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
   const cost = holdingsCostBasisTotal(holdings);
   const gl = total - cost;
   const glPct = cost > 0 ? gl / cost : 0;
-  const totalGlColor = gl > 0 ? 'text-positive' : gl < 0 ? 'text-negative' : 'text-gray-400';
+  const totalGlColor = gl > 0 ? 'text-positive' : gl < 0 ? 'text-negative' : 'text-ink-3';
   const mutedCount = holdings.filter((h) => h.muted).length;
   const mutedValue = mutedHoldingsTotal(holdings);
 
   return (
     <div className={`mt-2 mb-3 ${isMuted ? 'opacity-40' : ''}`}>
       <div className="overflow-x-auto -mx-1 px-1">
-        <table className="w-full text-xs font-mono min-w-[560px]">
+        <table className="ledger text-xs min-w-[560px]">
           <thead>
-            <tr className="text-[10px] uppercase tracking-wide text-gray-600">
-              <th className="text-left font-medium py-1 pr-2">Holding</th>
-              <th className="text-right font-medium py-1 px-2">Shares</th>
-              <th className="text-right font-medium py-1 px-2">Price</th>
-              <th className="text-right font-medium py-1 px-2">Mkt Val</th>
-              <th className="text-right font-medium py-1 px-2">Cost Basis</th>
-              <th className="text-right font-medium py-1 px-2">G/L</th>
-              <th className="text-right font-medium py-1 px-2">G/L %</th>
-              <th className="py-1 pl-2 w-16" />
+            <tr>
+              <th className="text-left pr-2">Holding</th>
+              <th className="text-right px-2">Shares</th>
+              <th className="text-right px-2">Price</th>
+              <th className="text-right px-2">Mkt Val</th>
+              <th className="text-right px-2">Cost Basis</th>
+              <th className="text-right px-2">G/L</th>
+              <th className="text-right px-2">G/L %</th>
+              <th className="pl-2 w-16" />
             </tr>
           </thead>
           <tbody>
@@ -839,39 +840,39 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
               const mv = holdingMarketValue(h);
               const hgl = mv - h.costBasis;
               const hpct = h.costBasis > 0 ? hgl / h.costBasis : 0;
-              const glColor = hgl > 0 ? 'text-positive' : hgl < 0 ? 'text-negative' : 'text-gray-400';
+              const glColor = hgl > 0 ? 'text-positive' : hgl < 0 ? 'text-negative' : 'text-ink-3';
               const isConfirm = confirmId === h.id;
               const rowMuted = h.muted === true;
               const rowRefreshBusy = refreshingTickers.has(h.ticker.trim().toUpperCase());
               return (
-                <tr key={h.id} className={`border-t border-surface-3/50 ${rowMuted ? 'opacity-40' : ''}`}>
+                <tr key={h.id} className={rowMuted ? 'opacity-40' : ''}>
                   <td className="py-1 pr-2 align-top">
                     {identityEditId === h.id ? (
                       <div className="space-y-1">
                         <div>
-                          <div className="text-[9px] uppercase tracking-wide text-gray-600 px-1.5">Display name</div>
+                          <div className="text-[9px] uppercase tracking-wide text-ink-dim px-1.5">Display name</div>
                           <input
                             type="text"
                             value={h.displayName ?? ''}
                             onChange={(e) => onUpdate(h.id, { displayName: e.target.value })}
                             placeholder="(optional)"
                             autoFocus
-                            className="w-28 bg-surface-3 border border-surface-3 focus:border-accent rounded px-1.5 py-0.5 text-gray-200 focus:outline-none"
+                            className="w-28 px-1.5 py-0.5"
                           />
                         </div>
                         <div>
-                          <div className="text-[9px] uppercase tracking-wide text-gray-600 px-1.5">Ticker (for pricing)</div>
+                          <div className="text-[9px] uppercase tracking-wide text-ink-dim px-1.5">Ticker (for pricing)</div>
                           <input
                             type="text"
                             value={h.ticker}
                             onChange={(e) => onUpdate(h.id, { ticker: e.target.value.toUpperCase() })}
                             placeholder="TICKER"
-                            className="w-28 bg-surface-3 border border-surface-3 focus:border-accent rounded px-1.5 py-0.5 text-gray-200 uppercase focus:outline-none"
+                            className="w-28 px-1.5 py-0.5 uppercase"
                           />
                         </div>
                         <button
                           onClick={() => setIdentityEditId(null)}
-                          className="text-[10px] text-accent hover:text-accent/80 transition-colors px-1.5"
+                          className="btn-link fern px-1.5"
                         >
                           Done
                         </button>
@@ -880,9 +881,9 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
                       <button
                         onClick={() => setIdentityEditId(h.id)}
                         title={h.displayName?.trim()
-                          ? `Prices from ${h.ticker || '—'} — click to edit name/ticker`
+                          ? `Prices from ${h.ticker || 'none'}. Click to edit name/ticker`
                           : 'Click to edit name/ticker'}
-                        className={`w-20 text-left bg-transparent border border-transparent hover:border-surface-3 rounded px-1.5 py-0.5 truncate ${h.displayName?.trim() ? '' : 'uppercase'} ${holdingLabel(h) ? 'text-gray-200' : 'text-gray-600'}`}
+                        className={`w-20 text-left bg-transparent border border-transparent hover:border-rule rounded px-1.5 py-0.5 truncate ${h.displayName?.trim() ? '' : 'uppercase'} ${holdingLabel(h) ? 'text-ink' : 'text-ink-dim'}`}
                       >
                         {holdingLabel(h) || 'TICKER'}
                       </button>
@@ -892,7 +893,7 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
                       value={h.name}
                       onChange={(e) => onUpdate(h.id, { name: e.target.value })}
                       placeholder="Fund name"
-                      className="block w-full mt-0.5 bg-transparent border border-transparent hover:border-surface-3 focus:bg-surface-3 focus:border-accent rounded px-1.5 py-0.5 text-[10px] text-gray-500 focus:outline-none"
+                      className="block w-full mt-0.5 bg-transparent px-1.5 py-0.5 text-[10px] text-ink-dim"
                     />
                   </td>
                   <td className="py-1 px-2 align-top">
@@ -901,31 +902,31 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
                       step="0.001"
                       value={h.shares}
                       onChange={(e) => onUpdate(h.id, { shares: Number(e.target.value) })}
-                      className="w-24 bg-transparent border border-transparent hover:border-surface-3 focus:bg-surface-3 focus:border-accent rounded px-1.5 py-0.5 text-gray-200 text-right focus:outline-none"
+                      className="w-24 bg-transparent px-1.5 py-0.5 text-ink text-right"
                     />
                   </td>
                   <td className="py-1 px-2 align-top">
                     <div className="relative">
-                      <span className="absolute left-1.5 top-0.5 text-gray-600">$</span>
+                      <span className="absolute left-1.5 top-0.5 text-ink-dim">$</span>
                       <input
                         type="number"
                         step="0.01"
                         value={h.price}
                         onChange={(e) => onUpdate(h.id, { price: Number(e.target.value) })}
-                        className="w-24 bg-transparent border border-transparent hover:border-surface-3 focus:bg-surface-3 focus:border-accent rounded pl-4 pr-1.5 py-0.5 text-gray-200 text-right focus:outline-none"
+                        className="w-24 bg-transparent pl-4 pr-1.5 py-0.5 text-ink text-right"
                       />
                     </div>
                   </td>
-                  <td className="py-1 px-2 align-top text-right text-gray-200">{fmt(mv)}</td>
+                  <td className="py-1 px-2 align-top text-right text-ink">{fmt(mv)}</td>
                   <td className="py-1 px-2 align-top">
                     <div className="relative">
-                      <span className="absolute left-1.5 top-0.5 text-gray-600">$</span>
+                      <span className="absolute left-1.5 top-0.5 text-ink-dim">$</span>
                       <input
                         type="number"
                         step="0.01"
                         value={h.costBasis}
                         onChange={(e) => onUpdate(h.id, { costBasis: Number(e.target.value) })}
-                        className="w-28 bg-transparent border border-transparent hover:border-surface-3 focus:bg-surface-3 focus:border-accent rounded pl-4 pr-1.5 py-0.5 text-gray-300 text-right focus:outline-none"
+                        className="w-28 bg-transparent pl-4 pr-1.5 py-0.5 text-ink-2 text-right"
                       />
                     </div>
                   </td>
@@ -938,14 +939,14 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
                       <button
                         onClick={() => onRefreshTicker(h.ticker)}
                         disabled={rowRefreshBusy || !h.ticker.trim()}
-                        className="w-5 h-5 flex items-center justify-center rounded transition-colors text-gray-500 hover:text-accent disabled:hover:text-gray-500 disabled:opacity-50"
+                        className="w-5 h-5 flex items-center justify-center rounded transition-colors text-ink-dim hover:text-fern disabled:hover:text-ink-dim disabled:opacity-50"
                         title={h.ticker.trim() ? `Refresh ${h.ticker.trim().toUpperCase()} price` : 'Set a ticker to fetch a price'}
                       >
                         <span className={rowRefreshBusy ? 'inline-block animate-spin' : ''}>↻</span>
                       </button>
                       <button
                         onClick={() => onUpdate(h.id, { muted: !rowMuted })}
-                        className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${rowMuted ? 'text-gray-600 hover:text-gray-400' : 'text-gray-500 hover:text-gray-300'}`}
+                        className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${rowMuted ? 'text-ink-dim hover:text-ink-3' : 'text-ink-3 hover:text-ink'}`}
                         title={rowMuted ? 'Unmute holding' : 'Mute (exclude from totals)'}
                       >
                         {rowMuted ? '◌' : '◉'}
@@ -960,7 +961,7 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
                             setTimeout(() => setConfirmId((prev) => (prev === h.id ? null : prev)), 3000);
                           }
                         }}
-                        className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${isConfirm ? 'text-negative' : 'text-gray-600 hover:text-negative'}`}
+                        className={`w-5 h-5 flex items-center justify-center rounded transition-colors ${isConfirm ? 'text-clay' : 'text-ink-dim hover:text-clay'}`}
                         title={isConfirm ? 'Confirm delete' : 'Delete holding'}
                       >
                         {isConfirm ? '✓' : '×'}
@@ -972,12 +973,12 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
             })}
           </tbody>
           <tfoot>
-            <tr className="border-t border-surface-3 text-[11px]">
-              <td className="py-1.5 pr-2 text-gray-500">Total</td>
+            <tr className="text-[11px]">
+              <td className="pr-2 text-ink-dim">Total</td>
               <td />
               <td />
-              <td className="py-1.5 px-2 text-right text-gray-200">{fmt(total)}</td>
-              <td className="py-1.5 px-2 text-right text-gray-400">{fmt(cost)}</td>
+              <td className="py-1.5 px-2 text-right text-ink">{fmt(total)}</td>
+              <td className="py-1.5 px-2 text-right text-ink-3">{fmt(cost)}</td>
               <td className={`py-1.5 px-2 text-right ${totalGlColor}`}>{fmtSigned(gl)}</td>
               <td className={`py-1.5 px-2 text-right ${totalGlColor}`}>
                 {gl >= 0 ? '+' : '−'}{fmtPct(Math.abs(glPct), 1)}
@@ -990,13 +991,13 @@ function HoldingsEditor({ accountKey, holdings, isMuted, onUpdate, onAdd, onRemo
       <div className="pl-2 mt-1 flex items-center justify-between gap-2">
         <button
           onClick={onAdd}
-          className="text-[11px] text-accent hover:text-accent/80 transition-colors"
+          className="btn-link fern"
         >
           + Add holding
         </button>
         {mutedCount > 0 && (
-          <span className="text-[11px] text-gray-600">
-            Muted: <span className="font-mono text-gray-500">{fmt(mutedValue)}</span>
+          <span className="text-[11px] font-mono text-ink-dim">
+            Muted: <span className="text-ink-3">{fmt(mutedValue)}</span>
             {' '}({mutedCount} holding{mutedCount === 1 ? '' : 's'})
           </span>
         )}

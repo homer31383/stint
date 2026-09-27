@@ -3,6 +3,8 @@ import type { StintData, AccountBalances } from '../lib/types';
 import { StatCard } from '../components/StatCard';
 import { Panel } from '../components/Panel';
 import { Slider } from '../components/Slider';
+import { HandCheck } from '../components/HandCheck';
+import { PageTitle, Note } from '../components/Ink';
 import { estimateTaxes, estimateW2Taxes } from '../lib/tax';
 import { CD_DAY_RATE, SHOOT_SUP_RATE } from '../lib/rates';
 import { fmt, fmtPct, currentYear, weekdaysElapsedYTD, weekdaysBetween } from '../lib/helpers';
@@ -26,7 +28,7 @@ export function Planner({ data, balances }: Props) {
 
   // Calculate actual defaults from data
   const computedDefaults = useMemo(() => {
-    // Floor at the validated CD day rate — Stint settings may lag the rate card
+    // Floor at the validated CD day rate: Stint settings may lag the rate card
     const settingsRate = Math.max(data.settings?.service_rates?.day_rate ?? 0, CD_DAY_RATE);
     const yearEntries = data.timeEntries.filter((e) => e.date.startsWith(String(year)));
     const dayRateDates = new Set(yearEntries.filter((e) => e.service_type === 'day_rate').map((e) => e.date));
@@ -153,7 +155,7 @@ export function Planner({ data, balances }: Props) {
   const inflationRate = s.inflationRate;
   const fullPicture = s.fullFinancialPicture;
 
-  // Real returns (nominal - inflation) — all values expressed in today's dollars
+  // Real returns (nominal - inflation): all values expressed in today's dollars
   const realEquityReturn = equityReturn - inflationRate;
   const realRolloverReturn = rolloverReturn - inflationRate;
   const realCashReturn = cashReturn - inflationRate;
@@ -169,10 +171,10 @@ export function Planner({ data, balances }: Props) {
 
     const taxes = estimateTaxes(grossAnnual);
 
-    // Interest income (HYS + Money Market) — nominal returns
+    // Interest income (HYS + Money Market): nominal returns
     const monthlyInterest = (balances.hys * cashReturn + balances.moneyMarket * cashReturn) / 12;
 
-    // Investment returns (taxable brokerage) — nominal returns
+    // Investment returns (taxable brokerage): nominal returns
     const monthlyInvestmentReturns = balances.brokerage * equityReturn / 12;
 
     // Total expenses = freelance base expenses + freelance health insurance
@@ -188,10 +190,10 @@ export function Planner({ data, balances }: Props) {
     const monthlyCashFlow = fullPicture ? fullMonthlyCashFlow : freelanceMonthlyCashFlow;
     const annualSavings = monthlyCashFlow * 12;
 
-    // Full annual savings (always includes passive — used by 5-year projection)
+    // Full annual savings (always includes passive: used by 5-year projection)
     const fullAnnualSavings = fullMonthlyCashFlow * 12;
 
-    // Retirement account growth (tax-deferred) — nominal returns
+    // Retirement account growth (tax-deferred): nominal returns
     const annualRetirementGrowth =
       balances.tradIRA * equityReturn +
       balances.rolloverIRA * rolloverReturn +
@@ -354,7 +356,7 @@ export function Planner({ data, balances }: Props) {
     return years;
   }, [balances, realCashReturn, realEquityReturn, realRolloverReturn, calc.fullAnnualSavings, year, mode, ftCalc]);
 
-  // Rollover IRA growth scenarios — SPY at 7% is current, others shown for context
+  // Rollover IRA growth scenarios: SPY at 7% is current, others shown for context
   const rolloverComparison = useMemo(() => {
     const scenarios: { rate: number; label: string; current: boolean }[] = [
       { rate: 0.04, label: 'Cash / HYS', current: false },
@@ -444,44 +446,35 @@ export function Planner({ data, balances }: Props) {
   }, [compareMode, compareIds, savedScenarios]);
 
   const summaryText = activeCashFlow > 1000
-    ? 'Healthy surplus — you\'re saving significantly each month.'
+    ? 'Healthy surplus: you\'re saving significantly each month.'
     : activeCashFlow > 0
-    ? 'Marginally positive — you\'re roughly breaking even.'
-    : 'Cash flow negative — expenses exceed take-home at this utilization.';
-
-  const summaryColor = activeCashFlow > 1000 ? 'text-positive' : activeCashFlow > 0 ? 'text-caution' : 'text-negative';
+    ? 'Marginally positive: you\'re roughly breaking even.'
+    : 'Cash flow negative. Expenses exceed take-home at this utilization.';
 
   return (
-    <div className="space-y-4">
-      <div className="flex items-center justify-between">
-        <h1 className="text-xl font-bold text-white">Financial Planner</h1>
-        <div className="flex items-center gap-2">
+    <div className="space-y-5">
+      <div className="flex items-end justify-between gap-3">
+        <PageTitle>the planner</PageTitle>
+        <div className="flex items-center gap-2 pb-1">
           {savedScenarios.length > 0 && (
             <button
               onClick={() => { setCompareMode(!compareMode); if (compareMode) setCompareIds([]); }}
-              className={`text-xs border rounded px-2 py-1 transition-colors ${
-                compareMode
-                  ? 'border-accent text-accent'
-                  : 'border-surface-3 text-gray-500 hover:text-gray-300 hover:border-gray-600'
-              }`}
+              className={`btn-stamp on-desk ${compareMode ? 'active' : ''}`}
             >
               {compareMode ? 'Exit compare' : 'Compare'}
             </button>
           )}
-          <button
-            onClick={handleSaveScenario}
-            className="text-xs text-accent border border-accent/40 rounded px-2 py-1 hover:bg-accent/10 transition-colors"
-          >
+          <button onClick={handleSaveScenario} className="btn-tag">
             Save scenario
           </button>
         </div>
       </div>
 
-      {/* Days to Target — freelance only */}
-      {mode === 'freelance' && <Panel title="Days to Target">
+      {/* Days to Target: freelance only */}
+      {mode === 'freelance' && <Panel title="Days to Target" tape="fern">
         <div className="mb-4">
           <div className="flex items-center justify-between mb-1">
-            <span className="text-sm text-gray-400">Target Utilization</span>
+            <span className="text-sm text-ink-3">Target Utilization</span>
             <div className="flex items-center gap-1">
               <input
                 type="number"
@@ -498,9 +491,9 @@ export function Planner({ data, balances }: Props) {
                   const clamped = Math.max(5, Math.min(95, Math.round(targetUtil * 100)));
                   setTargetInput(String(clamped));
                 }}
-                className="w-14 bg-surface-3 border border-surface-3 rounded px-2 py-0.5 font-mono text-sm text-white text-right focus:outline-none focus:border-accent"
+                className="w-14 px-2 py-0.5 text-sm text-right"
               />
-              <span className="text-sm text-gray-500">%</span>
+              <span className="text-sm text-ink-dim">%</span>
             </div>
           </div>
           <input
@@ -519,44 +512,32 @@ export function Planner({ data, balances }: Props) {
         </div>
 
         {/* Pipeline toggles */}
-        <div className="flex items-center gap-5 mb-4">
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <div className="relative">
-              <input
-                type="checkbox"
-                checked={includeBookings}
-                onChange={(e) => update('includeBookings', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-8 h-4 bg-surface-3 rounded-full peer-checked:bg-accent/60 transition-colors" />
-              <div className="absolute left-0.5 top-0.5 w-3 h-3 bg-gray-500 rounded-full peer-checked:translate-x-4 peer-checked:bg-white transition-all" />
-            </div>
-            <span className="text-sm text-gray-400">
-              Bookings
-              {daysToTarget.rawBooked > 0 && <span className="font-mono text-gray-500 ml-1">({daysToTarget.rawBooked}d)</span>}
-            </span>
-          </label>
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <div className="relative">
-              <input
-                type="checkbox"
-                checked={includePencils}
-                onChange={(e) => update('includePencils', e.target.checked)}
-                className="sr-only peer"
-              />
-              <div className="w-8 h-4 bg-surface-3 rounded-full peer-checked:bg-accent/60 transition-colors" />
-              <div className="absolute left-0.5 top-0.5 w-3 h-3 bg-gray-500 rounded-full peer-checked:translate-x-4 peer-checked:bg-white transition-all" />
-            </div>
-            <span className="text-sm text-gray-400">
-              Pencils
-              {daysToTarget.rawPenciled > 0 && <span className="font-mono text-gray-500 ml-1">({daysToTarget.rawPenciled}d)</span>}
-            </span>
-          </label>
+        <div className="flex items-center gap-6 mb-4">
+          <HandCheck
+            checked={includeBookings}
+            onChange={(v) => update('includeBookings', v)}
+            label={
+              <span className="text-sm text-ink-3">
+                Bookings
+                {daysToTarget.rawBooked > 0 && <span className="font-mono text-ink-dim ml-1">({daysToTarget.rawBooked}d)</span>}
+              </span>
+            }
+          />
+          <HandCheck
+            checked={includePencils}
+            onChange={(v) => update('includePencils', v)}
+            label={
+              <span className="text-sm text-ink-3">
+                Pencils
+                {daysToTarget.rawPenciled > 0 && <span className="font-mono text-ink-dim ml-1">({daysToTarget.rawPenciled}d)</span>}
+              </span>
+            }
+          />
         </div>
 
         <div className="space-y-1.5 text-sm mb-4">
-          <p className="text-gray-400">
-            <span className="font-mono text-white">{daysToTarget.daysWorked}</span> days worked
+          <p className="text-ink-3">
+            <span className="font-mono text-ink">{daysToTarget.daysWorked}</span> days worked
             {daysToTarget.committedDays > 0 && (
               <>{' · '}<span className="font-mono text-accent">{daysToTarget.committedDays}</span> days committed</>
             )}
@@ -570,40 +551,40 @@ export function Planner({ data, balances }: Props) {
           ) : targetCalc.alreadyMet ? (
             <p className="text-positive font-medium">Target already met!</p>
           ) : (
-            <p className="text-gray-400">
-              That's <span className="font-mono text-white">{targetCalc.newWorkPerMonth.toFixed(1)}</span> days/month of new work across{' '}
-              <span className="font-mono text-white">{Math.max(0, targetCalc.uncommittedMonths).toFixed(1)}</span> uncommitted months
+            <p className="text-ink-3">
+              That's <span className="font-mono text-ink">{targetCalc.newWorkPerMonth.toFixed(1)}</span> days/month of new work across{' '}
+              <span className="font-mono text-ink">{Math.max(0, targetCalc.uncommittedMonths).toFixed(1)}</span> uncommitted months
             </p>
           )}
         </div>
 
-        {/* 3-segment progress bar */}
-        <div className="h-4 bg-surface-3 rounded-full overflow-hidden flex">
+        {/* 3-segment cut-paper strip: worked, committed, needed */}
+        <div className="strip">
           <div
-            className="h-full bg-positive"
-            style={{ width: `${targetCalc.targetDays > 0 ? (daysToTarget.daysWorked / targetCalc.targetDays) * 100 : 0}%` }}
+            className="strip-seg strip-worked"
+            style={{ width: `${targetCalc.targetDays > 0 ? (daysToTarget.daysWorked / targetCalc.targetDays) * 100 : 0}%`, '--s': 0 } as React.CSSProperties}
           />
           {daysToTarget.committedDays > 0 && (
             <div
-              className="h-full bg-accent"
-              style={{ width: `${targetCalc.targetDays > 0 ? (Math.min(daysToTarget.committedDays, Math.max(0, targetCalc.targetDays - daysToTarget.daysWorked)) / targetCalc.targetDays) * 100 : 0}%` }}
+              className="strip-seg strip-committed"
+              style={{ width: `${targetCalc.targetDays > 0 ? (Math.min(daysToTarget.committedDays, Math.max(0, targetCalc.targetDays - daysToTarget.daysWorked)) / targetCalc.targetDays) * 100 : 0}%`, '--s': 1 } as React.CSSProperties}
             />
           )}
           {!targetCalc.alreadyMet && (
             <div
-              className="h-full bg-caution/30"
-              style={{ width: `${targetCalc.targetDays > 0 ? (targetCalc.daysStillNeeded / targetCalc.targetDays) * 100 : 0}%` }}
+              className="strip-seg strip-needed"
+              style={{ width: `${targetCalc.targetDays > 0 ? (targetCalc.daysStillNeeded / targetCalc.targetDays) * 100 : 0}%`, '--s': 2 } as React.CSSProperties}
             />
           )}
         </div>
-        <div className="flex justify-between text-[10px] text-gray-500 mt-1 font-mono">
+        <div className="flex justify-between text-[10px] text-ink-dim mt-1.5 font-mono">
           <div className="flex gap-3">
-            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-positive" />{daysToTarget.daysWorked} worked</span>
+            <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-forest" />{daysToTarget.daysWorked} worked</span>
             {daysToTarget.committedDays > 0 && (
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-accent" />{daysToTarget.committedDays} committed</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-pencil" />{daysToTarget.committedDays} committed</span>
             )}
             {!targetCalc.alreadyMet && (
-              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-caution/50" />{targetCalc.daysStillNeeded} needed</span>
+              <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-paper2 border border-rule" />{targetCalc.daysStillNeeded} needed</span>
             )}
           </div>
           <span>{targetCalc.targetDays} target</span>
@@ -611,63 +592,61 @@ export function Planner({ data, balances }: Props) {
 
         {/* Warning tags */}
         {targetCalc.impossible && (
-          <div className="mt-3 bg-red-900/30 border border-red-800 rounded-lg px-3 py-2 text-sm text-negative font-medium">
-            Not achievable — would require more than available weekdays ({daysToTarget.weekdaysRemaining} remaining)
+          <div className="callout callout-bad mt-3">
+            Not achievable: would require more than available weekdays ({daysToTarget.weekdaysRemaining} remaining)
           </div>
         )}
         {targetCalc.aggressive && (
-          <div className="mt-3 bg-yellow-900/30 border border-yellow-800 rounded-lg px-3 py-2 text-sm text-caution font-medium">
-            Aggressive — requires <span className="font-mono">{fmtPct(targetCalc.remainingUtilRequired)}</span> utilization for the rest of the year
+          <div className="callout callout-warn mt-3">
+            Aggressive: requires <span className="font-mono not-italic">{fmtPct(targetCalc.remainingUtilRequired)}</span> utilization for the rest of the year
           </div>
         )}
       </Panel>}
 
       {/* Saved Scenarios */}
       {savedScenarios.length > 0 && (
-        <div className="bg-surface-1 rounded-xl border border-surface-3 overflow-hidden">
+        <div className="paper paper-3">
           <button
             onClick={() => setScenariosOpen(!scenariosOpen)}
-            className="w-full flex items-center justify-between px-4 py-2.5 text-sm text-gray-300 hover:text-white transition-colors"
+            className="w-full flex items-center justify-between px-4 md:px-6 py-3 text-sm text-ink-2 hover:text-ink transition-colors"
           >
-            <span className="font-medium">Saved Scenarios ({savedScenarios.length})</span>
-            <span className="text-gray-600 text-xs">{scenariosOpen ? '▲' : '▼'}</span>
+            <span className="serif font-semibold">Saved Scenarios ({savedScenarios.length})</span>
+            <span className="text-ink-dim text-xs">{scenariosOpen ? '▲' : '▼'}</span>
           </button>
           {scenariosOpen && (
-            <div className="border-t border-surface-3 px-4 py-3 space-y-2">
+            <div className="mx-4 md:mx-6 pb-4 pt-2 space-y-1" style={{ borderTop: '2px solid rgba(46,42,32,0.7)' }}>
               {savedScenarios.map((sc) => (
                 <div
                   key={sc.id}
-                  className="flex items-center gap-3 py-2 px-2 rounded-lg hover:bg-surface-2 transition-colors group"
+                  className="ledger-row flex items-center gap-3 py-2.5 px-1 group"
                 >
                   {compareMode && (
-                    <input
-                      type="checkbox"
+                    <HandCheck
                       checked={compareIds.includes(sc.id)}
                       onChange={() => toggleCompareId(sc.id)}
                       disabled={!compareIds.includes(sc.id) && compareIds.length >= 3}
-                      className="accent-accent flex-shrink-0"
                     />
                   )}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
-                      <span className="text-sm text-gray-200 truncate">{sc.name}</span>
-                      <span className="text-[10px] text-gray-600 flex-shrink-0">
+                      <span className="text-sm serif font-semibold text-ink truncate">{sc.name}</span>
+                      <span className="text-[10px] font-mono text-ink-dim flex-shrink-0">
                         {new Date(sc.savedAt).toLocaleDateString()}
                       </span>
                     </div>
-                    <div className="flex gap-3 text-[11px] text-gray-500 font-mono mt-0.5">
+                    <div className="flex gap-3 text-[11px] text-ink-dim font-mono mt-0.5">
                       <span>{sc.metrics.mode === 'fulltime' ? 'FT' : 'FL'}</span>
                       <span className={sc.metrics.monthlyCashFlowFull >= 0 ? 'text-positive' : 'text-negative'}>
                         {fmt(sc.metrics.monthlyCashFlowFull)}/mo
                       </span>
                       <span>{fmt(sc.metrics.annualSavingsFull)}/yr</span>
-                      <span className="text-gray-600">{fmt(sc.metrics.monthlyExpenses)}/mo exp</span>
+                      <span className="text-ink-dim">{fmt(sc.metrics.monthlyExpenses)}/mo exp</span>
                     </div>
                   </div>
                   {!compareMode && (
                     <button
                       onClick={() => handleLoadScenario(sc)}
-                      className="text-xs text-accent hover:text-accent/80 transition-colors opacity-0 group-hover:opacity-100"
+                      className="btn-stamp fern opacity-0 group-hover:opacity-100"
                     >
                       Load
                     </button>
@@ -683,10 +662,8 @@ export function Planner({ data, balances }: Props) {
                         setTimeout(() => setDeleteConfirm(null), 3000);
                       }
                     }}
-                    className={`text-xs transition-colors opacity-0 group-hover:opacity-100 ${
-                      deleteConfirm === sc.id
-                        ? 'text-negative'
-                        : 'text-gray-600 hover:text-negative'
+                    className={`btn-link opacity-0 group-hover:opacity-100 ${
+                      deleteConfirm === sc.id ? 'clay' : ''
                     }`}
                   >
                     {deleteConfirm === sc.id ? 'Confirm?' : '×'}
@@ -694,8 +671,8 @@ export function Planner({ data, balances }: Props) {
                 </div>
               ))}
               {compareMode && compareIds.length > 0 && (
-                <p className="text-[10px] text-gray-600 pt-1">
-                  {compareIds.length}/3 selected — see comparison table below
+                <p className="text-[10px] font-mono text-ink-dim pt-2">
+                  {compareIds.length}/3 selected. See comparison table below
                 </p>
               )}
             </div>
@@ -705,15 +682,15 @@ export function Planner({ data, balances }: Props) {
 
       {/* Compare Table */}
       {compareMode && compareData.length > 0 && (
-        <Panel title="Scenario Comparison">
+        <Panel title="Scenario Comparison" dense>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="ledger">
               <thead>
-                <tr className="text-gray-500 text-[10px] uppercase tracking-wide">
-                  <th className="text-left py-1.5">Metric</th>
-                  <th className="text-right py-1.5 text-accent">Current</th>
+                <tr>
+                  <th className="text-left">Metric</th>
+                  <th className="text-right text-fern">Current</th>
                   {compareData.map(sc => (
-                    <th key={sc.id} className="text-right py-1.5">{sc.name}</th>
+                    <th key={sc.id} className="text-right">{sc.name}</th>
                   ))}
                 </tr>
               </thead>
@@ -725,8 +702,8 @@ export function Planner({ data, balances }: Props) {
                   { label: 'Utilization', key: 'utilization', format: (v: string | number) => typeof v === 'number' ? fmtPct(v) : String(v), hideIf: (m: SavedScenarioMetrics) => m.mode === 'fulltime' },
                   { label: 'Gross Annual', key: 'grossAnnual', format: (v: string | number) => fmt(v as number) },
                   { label: 'Net Annual', key: 'netAnnual', format: (v: string | number) => fmt(v as number) },
-                  { label: 'Monthly Expenses', key: 'monthlyExpensesBase', format: (v: string | number) => typeof v === 'number' ? fmt(v) : '—', invert: true },
-                  { label: 'Health Insurance', key: 'healthIns', format: (v: string | number) => typeof v === 'number' ? fmt(v) : '—', invert: true },
+                  { label: 'Monthly Expenses', key: 'monthlyExpensesBase', format: (v: string | number) => typeof v === 'number' ? fmt(v) : '–', invert: true },
+                  { label: 'Health Insurance', key: 'healthIns', format: (v: string | number) => typeof v === 'number' ? fmt(v) : '–', invert: true },
                   { label: 'Total Expenses', key: 'monthlyExpenses', format: (v: string | number) => fmt(v as number), invert: true },
                   { label: 'Recurring Expenses', key: 'monthlyRecurringTotal', format: (v: string | number) => fmt(v as number), invert: true },
                   { label: 'One-Time (Annual)', key: 'oneTimeAnnualTotal', format: (v: string | number) => fmt(v as number), invert: true },
@@ -759,21 +736,21 @@ export function Planner({ data, balances }: Props) {
                   const allSame = allValues.every(v => v.value === allValues[0]?.value);
 
                   function cellColor(id: string) {
-                    if (row.noHighlight || allSame) return 'text-gray-300';
+                    if (row.noHighlight || allSame) return 'text-ink-2';
                     if (best?.id === id) return 'text-positive';
                     if (worst?.id === id) return 'text-negative';
-                    return 'text-gray-300';
+                    return 'text-ink-2';
                   }
 
                   return (
-                    <tr key={row.key} className="border-t border-surface-3">
-                      <td className="py-1.5 text-gray-400 text-xs">{row.label}</td>
-                      <td className={`py-1.5 text-right font-mono ${cellColor('__current')}`}>
-                        {row.hideIf?.(currentMetrics) ? '—' : row.format(curVal)}
+                    <tr key={row.key}>
+                      <td className="text-ink-3 text-xs font-sans">{row.label}</td>
+                      <td className={`text-right ${cellColor('__current')}`}>
+                        {row.hideIf?.(currentMetrics) ? '–' : row.format(curVal)}
                       </td>
                       {compareData.map(sc => (
-                        <td key={sc.id} className={`py-1.5 text-right font-mono ${cellColor(sc.id)}`}>
-                          {row.hideIf?.(sc.metrics) ? '—' : row.format(sc.metrics[row.key])}
+                        <td key={sc.id} className={`text-right ${cellColor(sc.id)}`}>
+                          {row.hideIf?.(sc.metrics) ? '–' : row.format(sc.metrics[row.key])}
                         </td>
                       ))}
                     </tr>
@@ -788,6 +765,7 @@ export function Planner({ data, balances }: Props) {
       {/* Sliders */}
       <Panel
         title="Scenario Inputs"
+        dense
         action={
           <button
             onClick={async () => {
@@ -796,7 +774,7 @@ export function Planner({ data, balances }: Props) {
               setResetShown(true);
               setTimeout(() => setResetShown(false), 1500);
             }}
-            className="text-xs text-gray-500 border border-surface-3 rounded px-2 py-1 hover:text-gray-300 hover:border-gray-600 transition-colors"
+            className="btn-stamp"
           >
             {resetShown ? 'Reset \u2713' : 'Reset to defaults'}
           </button>
@@ -804,11 +782,11 @@ export function Planner({ data, balances }: Props) {
       >
         {mode === 'fulltime' ? (
           <>
-            <Slider label="Salary" value={s.ftSalary ?? 180000} min={100000} max={350000} step={5000} format={fmt} onChange={(v) => update('ftSalary', v)} />
-            <Slider label="401k Contribution" value={s.ftContribution401k ?? 23500} min={0} max={23500} step={500} format={fmt} onChange={(v) => update('ftContribution401k', v)} sub="Employee pre-tax (2025 limit $23,500)" />
-            <Slider label="Employer Match" value={s.ftEmployerMatch ?? 0.04} min={0} max={0.10} step={0.005} format={(v) => fmtPct(v, 1)} onChange={(v) => update('ftEmployerMatch', v)} sub={`${fmt((s.ftSalary ?? 180000) * (s.ftEmployerMatch ?? 0.04))}/yr employer contribution`} />
-            <Slider label="Health Insurance" value={s.ftHealthIns ?? DEFAULT_FT_HEALTH_INS} min={0} max={800} step={25} format={fmt} onChange={(v) => update('ftHealthIns', v)} sub={`Employer-subsidized · Total w/ expenses: ${fmt(activeMonthlyExpenses + (s.ftHealthIns ?? DEFAULT_FT_HEALTH_INS))}/mo`} />
-            <Slider label="Other Benefits" value={s.ftOtherBenefits ?? 0} min={0} max={1000} step={50} format={fmt} onChange={(v) => update('ftOtherBenefits', v)} sub="Dental, vision, etc. (monthly value)" />
+            <Slider label="Salary" value={s.ftSalary ?? 180000} min={100000} max={350000} step={5000} format={fmt} onChange={(v) => update('ftSalary', v)} tone="income" />
+            <Slider label="401k Contribution" value={s.ftContribution401k ?? 23500} min={0} max={23500} step={500} format={fmt} onChange={(v) => update('ftContribution401k', v)} sub="Employee pre-tax (2025 limit $23,500)" tone="income" />
+            <Slider label="Employer Match" value={s.ftEmployerMatch ?? 0.04} min={0} max={0.10} step={0.005} format={(v) => fmtPct(v, 1)} onChange={(v) => update('ftEmployerMatch', v)} sub={`${fmt((s.ftSalary ?? 180000) * (s.ftEmployerMatch ?? 0.04))}/yr employer contribution`} tone="income" />
+            <Slider label="Health Insurance" value={s.ftHealthIns ?? DEFAULT_FT_HEALTH_INS} min={0} max={800} step={25} format={fmt} onChange={(v) => update('ftHealthIns', v)} sub={`Employer-subsidized · Total w/ expenses: ${fmt(activeMonthlyExpenses + (s.ftHealthIns ?? DEFAULT_FT_HEALTH_INS))}/mo`} tone="expense" />
+            <Slider label="Other Benefits" value={s.ftOtherBenefits ?? 0} min={0} max={1000} step={50} format={fmt} onChange={(v) => update('ftOtherBenefits', v)} sub="Dental, vision, etc. (monthly value)" tone="income" />
           </>
         ) : (
           <>
@@ -827,6 +805,7 @@ export function Planner({ data, balances }: Props) {
             v,
           )}
           sub={`Excludes health insurance · ${mode === 'fulltime' ? 'Full-Time' : 'Freelance'} only`}
+          tone="expense"
         />
         {mode === 'freelance' && (
           <Slider
@@ -834,21 +813,23 @@ export function Planner({ data, balances }: Props) {
             value={healthIns} min={400} max={2400} step={100}
             format={fmt} onChange={(v) => update('healthIns', v)}
             sub={`Total w/ expenses: ${fmt(activeMonthlyExpenses + healthIns)}/mo`}
+            tone="expense"
           />
         )}
 
-        <Slider label="Equity Return Rate" value={equityReturn} min={0} max={0.15} step={0.01} format={(v) => fmtPct(v)} onChange={(v) => update('equityReturn', v)} />
+        <Slider label="Equity Return Rate" value={equityReturn} min={0} max={0.15} step={0.01} format={(v) => fmtPct(v)} onChange={(v) => update('equityReturn', v)} tone="income" />
         <Slider
           label="Rollover IRA Return"
           value={rolloverReturn} min={0} max={0.15} step={0.01}
           format={(v) => fmtPct(v)} onChange={(v) => update('rolloverReturn', v)}
-          sub="Deployed in SPY (S&P 500 ETF) — defaults to equity return"
+          sub="Deployed in SPY (S&P 500 ETF). Defaults to equity return"
+          tone="income"
         />
-        <Slider label="Cash Return (HYS/MM)" value={cashReturn} min={0} max={0.07} step={0.005} format={(v) => fmtPct(v, 1)} onChange={(v) => update('cashReturn', v)} />
+        <Slider label="Cash Return (HYS/MM)" value={cashReturn} min={0} max={0.07} step={0.005} format={(v) => fmtPct(v, 1)} onChange={(v) => update('cashReturn', v)} tone="income" />
 
         {mode === 'freelance' && (
-          <div className="border-t border-surface-3 pt-4 mt-2">
-            <div className="flex gap-2 mb-2">
+          <div className="ledger-total pt-4 mt-2">
+            <div className="flex gap-3 mb-3">
               {[
                 { label: 'CD day rate', rate: CD_DAY_RATE },
                 { label: 'Shoot supervisor', rate: SHOOT_SUP_RATE },
@@ -856,17 +837,13 @@ export function Planner({ data, balances }: Props) {
                 <button
                   key={p.rate}
                   onClick={() => update('dayRate', p.rate)}
-                  className={`text-xs px-2.5 py-1 rounded border transition-colors ${
-                    dayRate === p.rate
-                      ? 'border-accent text-accent bg-accent/10'
-                      : 'border-surface-3 text-gray-500 hover:text-gray-300 hover:border-gray-600'
-                  }`}
+                  className={`price-tag ${dayRate === p.rate ? 'active' : ''}`}
                 >
                   {p.label} · {fmt(p.rate)}
                 </button>
               ))}
             </div>
-            <Slider label="Day Rate" value={dayRate} min={800} max={2000} step={50} format={fmt} onChange={(v) => update('dayRate', v)} />
+            <Slider label="Day Rate" value={dayRate} min={800} max={2000} step={50} format={fmt} onChange={(v) => update('dayRate', v)} tone="income" />
             <Slider
               label="Utilization"
               value={utilization}
@@ -874,37 +851,30 @@ export function Planner({ data, balances }: Props) {
               format={(v) => fmtPct(v)}
               onChange={(v) => update('utilization', v)}
               sub={`≈ ${calc.weeksOn} weeks on · ${calc.weeksOff} weeks off · ${calc.monthsWorked} months worked`}
+              tone="income"
             />
-            <div className="text-xs text-gray-500 font-mono">
-              <span className="text-gray-400">260</span> weekdays
+            <div className="text-xs text-ink-dim font-mono">
+              <span className="text-ink-3">260</span> weekdays
               {' '}<span className="text-negative">−{vacationDays}</span> vacation
               {' '}<span className="text-negative">−{holidays}</span> holidays
               {' '}<span className="text-negative">−{sickDays}</span> sick
-              {' '}= <span className="text-white font-medium">{availableDays}</span> available days
+              {' '}= <span className="text-ink font-medium">{availableDays}</span> available days
             </div>
           </div>
         )}
       </Panel>
 
       {/* Financial picture toggle */}
-      <div className="flex items-center">
-        <label className="flex items-center gap-2 cursor-pointer select-none">
-          <div className="relative">
-            <input
-              type="checkbox"
-              checked={fullPicture}
-              onChange={(e) => update('fullFinancialPicture', e.target.checked)}
-              className="sr-only peer"
-            />
-            <div className="w-8 h-4 bg-surface-3 rounded-full peer-checked:bg-accent/60 transition-colors" />
-            <div className="absolute left-0.5 top-0.5 w-3 h-3 bg-gray-500 rounded-full peer-checked:translate-x-4 peer-checked:bg-white transition-all" />
-          </div>
-          <span className="text-sm text-gray-400">{fullPicture ? 'Full financial picture' : (mode === 'fulltime' ? 'Salary income only' : 'Freelance income only')}</span>
-        </label>
+      <div className="flex items-center fj-desk-text">
+        <HandCheck
+          checked={fullPicture}
+          onChange={(v) => update('fullFinancialPicture', v)}
+          label={<span className="hand text-xl leading-none">{fullPicture ? 'full financial picture' : (mode === 'fulltime' ? 'salary income only' : 'freelance income only')}</span>}
+        />
       </div>
 
       {/* Monthly Snapshot */}
-      <Panel title="Monthly Snapshot">
+      <Panel title="Monthly Snapshot" action={activeCashFlow > 0 ? <Note>in the black ✓</Note> : undefined}>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           {mode === 'fulltime' && ftCalc ? (
             <>
@@ -921,7 +891,7 @@ export function Planner({ data, balances }: Props) {
               <StatCard label="Expenses" value={fmt(ftCalc.monthlyExpensesBase)} color="text-negative" sub="Excl. health" />
               <StatCard label="Health Insurance" value={fmt(ftCalc.ftHealthIns)} color="text-negative" sub="Employee share" />
               <StatCard label="Total Expenses" value={fmt(ftCalc.totalExpenses)} color="text-negative" />
-              <StatCard label="Net Cash Flow" value={fmt(ftCalc.monthlyCashFlow)} color={ftCalc.monthlyCashFlow >= 0 ? 'text-positive' : 'text-negative'} />
+              <StatCard label="Net Cash Flow" value={fmt(ftCalc.monthlyCashFlow)} color={ftCalc.monthlyCashFlow >= 0 ? 'text-positive' : 'text-negative'} circled={ftCalc.monthlyCashFlow > 0} />
               {fullPicture && (
                 <>
                   <StatCard label="Retirement Growth" value={`+${fmt(ftCalc.monthlyRetirementGrowth)}`} color="text-retirement" />
@@ -943,7 +913,7 @@ export function Planner({ data, balances }: Props) {
               <StatCard label="Expenses" value={fmt(calc.monthlyExpensesBase)} color="text-negative" sub="Excl. health" />
               <StatCard label="Health Insurance" value={fmt(calc.healthIns)} color="text-negative" />
               <StatCard label="Total Expenses" value={fmt(calc.totalExpenses)} color="text-negative" />
-              <StatCard label="Net Cash Flow" value={fmt(calc.monthlyCashFlow)} color={calc.monthlyCashFlow >= 0 ? 'text-positive' : 'text-negative'} />
+              <StatCard label="Net Cash Flow" value={fmt(calc.monthlyCashFlow)} color={calc.monthlyCashFlow >= 0 ? 'text-positive' : 'text-negative'} circled={calc.monthlyCashFlow > 0} />
               {fullPicture && (
                 <>
                   <StatCard label="Retirement Growth" value={`+${fmt(calc.monthlyRetirementGrowth)}`} color="text-retirement" />
@@ -956,19 +926,15 @@ export function Planner({ data, balances }: Props) {
       </Panel>
 
       {/* Employment Mode Toggle (secondary) */}
-      <div className="flex items-center gap-4">
+      <div className="folder-tabs">
         <button
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            mode === 'freelance' ? 'bg-accent text-white' : 'bg-surface-2 text-gray-400 hover:text-gray-200'
-          }`}
+          className={`folder-tab ${mode === 'freelance' ? 'active' : ''}`}
           onClick={() => update('employmentMode', 'freelance')}
         >
           Freelance
         </button>
         <button
-          className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
-            mode === 'fulltime' ? 'bg-accent text-white' : 'bg-surface-2 text-gray-400 hover:text-gray-200'
-          }`}
+          className={`folder-tab ${mode === 'fulltime' ? 'active' : ''}`}
           onClick={() => update('employmentMode', 'fulltime')}
         >
           Full-Time
@@ -1012,35 +978,35 @@ export function Planner({ data, balances }: Props) {
       </Panel>
 
       {/* Summary callout */}
-      <div className={`bg-surface-2 rounded-lg p-4 border-l-4 ${activeCashFlow > 1000 ? 'border-positive' : activeCashFlow > 0 ? 'border-caution' : 'border-negative'}`}>
-        <p className={`text-sm font-medium ${summaryColor}`}>{summaryText}</p>
+      <div className={`callout ${activeCashFlow > 1000 ? 'callout-good' : activeCashFlow > 0 ? 'callout-warn' : 'callout-bad'}`}>
+        {summaryText}
       </div>
 
-      {/* Scenario Comparison — freelance only */}
+      {/* Scenario Comparison: freelance only */}
       {mode === 'freelance' && (
-        <Panel title="Scenario Comparison">
+        <Panel title="Scenario Comparison" dense>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="ledger">
               <thead>
-                <tr className="text-gray-500 text-xs">
-                  <th className="text-left py-1">Scenario</th>
-                  <th className="text-right py-1">Gross/yr</th>
-                  <th className="text-right py-1">Net/yr</th>
-                  <th className="text-right py-1">Savings/yr</th>
-                  <th className="text-right py-1">Days/mo</th>
+                <tr>
+                  <th className="text-left">Scenario</th>
+                  <th className="text-right">Gross/yr</th>
+                  <th className="text-right">Net/yr</th>
+                  <th className="text-right">Savings/yr</th>
+                  <th className="text-right">Days/mo</th>
                 </tr>
               </thead>
               <tbody>
                 {scenarios.map((s) => (
                   <tr
                     key={s.name}
-                    className={`border-t border-surface-3 ${s.isCurrent ? 'bg-accent/10' : ''}`}
+                    className={s.isCurrent ? 'bg-sage' : ''}
                   >
-                    <td className={`py-2 ${s.isCurrent ? 'text-accent font-medium' : 'text-gray-300'}`}>{s.name}</td>
-                    <td className="py-2 text-right font-mono text-gray-300">{fmt(s.gross)}</td>
-                    <td className="py-2 text-right font-mono text-gray-300">{fmt(s.net)}</td>
-                    <td className={`py-2 text-right font-mono ${s.savings >= 0 ? 'text-positive' : 'text-negative'}`}>{fmt(s.savings)}</td>
-                    <td className="py-2 text-right font-mono text-gray-400">{s.daysPerMonth}</td>
+                    <td className={`pl-1 ${s.isCurrent ? 'text-fern font-semibold' : 'text-ink-2'}`}>{s.name}</td>
+                    <td className="text-right text-ink-2">{fmt(s.gross)}</td>
+                    <td className="text-right text-ink-2">{fmt(s.net)}</td>
+                    <td className={`text-right ${s.savings >= 0 ? 'text-positive' : 'text-negative'}`}>{fmt(s.savings)}</td>
+                    <td className="text-right text-ink-3 pr-1">{s.daysPerMonth}</td>
                   </tr>
                 ))}
               </tbody>
@@ -1049,17 +1015,17 @@ export function Planner({ data, balances }: Props) {
         </Panel>
       )}
 
-      {/* Comparison Panel — FT mode only */}
+      {/* Comparison Panel: FT mode only */}
       {mode === 'fulltime' && ftCalc && (
-        <Panel title="Freelance vs Full-Time Comparison">
+        <Panel title="Freelance vs Full-Time Comparison" dense>
           <div className="overflow-x-auto">
-            <table className="w-full text-sm">
+            <table className="ledger">
               <thead>
-                <tr className="text-gray-500 text-xs">
-                  <th className="text-left py-1">Metric</th>
-                  <th className="text-right py-1">Freelance</th>
-                  <th className="text-right py-1">Full-Time</th>
-                  <th className="text-right py-1">Delta</th>
+                <tr>
+                  <th className="text-left">Metric</th>
+                  <th className="text-right">Freelance</th>
+                  <th className="text-right">Full-Time</th>
+                  <th className="text-right">Delta</th>
                 </tr>
               </thead>
               <tbody>
@@ -1073,15 +1039,15 @@ export function Planner({ data, balances }: Props) {
                 ].map((row) => {
                   const delta = row.isPct ? row.ft - row.fl : row.ft - row.fl;
                   return (
-                    <tr key={row.label} className="border-t border-surface-3">
-                      <td className="py-2 text-gray-300">{row.label}</td>
-                      <td className="py-2 text-right font-mono text-gray-400">
+                    <tr key={row.label}>
+                      <td className="text-ink-2 font-sans">{row.label}</td>
+                      <td className="text-right text-ink-3">
                         {row.isPct ? fmtPct(row.fl) : fmt(row.fl)}
                       </td>
-                      <td className="py-2 text-right font-mono text-white">
+                      <td className="text-right text-ink">
                         {row.isPct ? fmtPct(row.ft) : fmt(row.ft)}
                       </td>
-                      <td className={`py-2 text-right font-mono ${delta >= 0 ? 'text-positive' : 'text-negative'}`}>
+                      <td className={`text-right ${delta >= 0 ? 'text-positive' : 'text-negative'}`}>
                         {row.isPct ? (delta >= 0 ? '+' : '') + fmtPct(delta) : (delta >= 0 ? '+' : '') + fmt(delta)}
                       </td>
                     </tr>
@@ -1094,65 +1060,66 @@ export function Planner({ data, balances }: Props) {
       )}
 
       {/* 5-Year Net Worth Projection */}
-      <Panel title="5-Year Net Worth Projection">
-        <div className="flex items-end gap-2 h-48 mb-4">
-          {projection.map((p) => {
+      <Panel title="5-Year Net Worth Projection" tape="kraft" tapeSide="right">
+        <div className="flex items-end gap-3 h-48 mb-4">
+          {projection.map((p, bi) => {
             const accPct = (p.accessible / projMax) * 100;
             const retPct = (p.retirement / projMax) * 100;
+            const barVar = { '--b': bi } as React.CSSProperties;
             return (
-              <div key={p.year} className="flex-1 flex flex-col items-center gap-1">
+              <div key={p.year} className="pbar-col flex-1 flex flex-col items-center gap-1">
                 <div className="w-full flex flex-col justify-end h-40">
-                  <div className="w-full bg-retirement rounded-t" style={{ height: `${retPct}%` }} />
-                  <div className="w-full bg-positive" style={{ height: `${accPct}%` }} />
+                  <div className="pbar pbar-stack bg-kraft" style={{ height: `${retPct}%`, ...barVar }} />
+                  <div className="pbar pbar-stack bg-forest" style={{ height: `${accPct}%`, ...barVar }} />
                 </div>
-                <span className="text-[10px] text-gray-500 font-mono">{p.year}</span>
+                <span className="text-[10px] text-ink-dim font-mono">{p.year}</span>
               </div>
             );
           })}
         </div>
-        <div className="flex gap-4 text-xs text-gray-500 mb-4">
-          <span className="flex items-center gap-1"><span className="w-3 h-3 bg-positive rounded" /> Accessible</span>
-          <span className="flex items-center gap-1"><span className="w-3 h-3 bg-retirement rounded" /> Retirement</span>
+        <div className="flex gap-4 text-xs font-mono text-ink-dim mb-4">
+          <span className="flex items-center gap-1"><span className="w-3 h-3 bg-forest rounded-sm" /> Accessible</span>
+          <span className="flex items-center gap-1"><span className="w-3 h-3 bg-kraft rounded-sm" /> Retirement</span>
         </div>
         <div className="grid grid-cols-3 gap-3">
           <StatCard label="NW Today" value={fmt(projection[0].total)} />
           <StatCard label={`Projected ${projection[5].year}`} value={fmt(projection[5].total)} color="text-positive" />
           <StatCard label="Total Growth" value={fmt(projection[5].total - projection[0].total)} color="text-positive" />
         </div>
-        <div className="border-t border-surface-3 pt-4 mt-4">
+        <div className="ledger-total pt-4 mt-4">
           <Slider label="Inflation Rate" value={inflationRate} min={0} max={0.08} step={0.005} format={(v) => fmtPct(v, 1)} onChange={(v) => update('inflationRate', v)} />
-          <p className="text-[11px] text-gray-600 -mt-2">Applied to long-term projections only — monthly/annual figures use nominal returns</p>
+          <p className="text-[11px] font-mono text-ink-dim -mt-2">Applied to long-term projections only. Monthly/annual figures use nominal returns</p>
         </div>
       </Panel>
 
       {/* Rollover IRA Growth Scenarios */}
-      <Panel title="Rollover IRA Growth Scenarios">
-        <p className="text-xs text-gray-500 mb-3">
+      <Panel title="Rollover IRA Growth Scenarios" dense>
+        <p className="text-xs text-ink-dim mb-3">
           Current: SPY at 7% nominal. What {fmt(balances.rolloverIRA)} becomes over 5 years vs. alternative return rates (real, after {fmtPct(inflationRate, 1)} inflation).
         </p>
         <div className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="ledger">
             <thead>
-              <tr className="text-gray-500 text-xs">
-                <th className="text-left py-1">Scenario</th>
-                <th className="text-left py-1">Nominal</th>
-                <th className="text-left py-1">Real</th>
+              <tr>
+                <th className="text-left">Scenario</th>
+                <th className="text-left">Nominal</th>
+                <th className="text-left">Real</th>
                 {Array.from({ length: 6 }, (_, i) => (
-                  <th key={i} className="text-right py-1">Yr {i}</th>
+                  <th key={i} className="text-right">Yr {i}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {rolloverComparison.map((r) => (
-                <tr key={r.rate} className={`border-t border-surface-3 ${r.current ? 'bg-positive/5' : ''}`}>
-                  <td className={`py-2 ${r.current ? 'text-positive font-medium' : 'text-gray-400'}`}>
+                <tr key={r.rate} className={r.current ? 'bg-sage' : ''}>
+                  <td className={`pl-1 font-sans ${r.current ? 'text-positive font-semibold' : 'text-ink-3'}`}>
                     {r.label}
-                    {r.current && <span className="ml-1.5 text-[10px] uppercase tracking-wider text-positive/80">Current</span>}
+                    {r.current && <span className="ml-1.5 text-[10px] font-mono uppercase tracking-wider text-positive/80">Current</span>}
                   </td>
-                  <td className="py-2 text-gray-300">{fmtPct(r.rate)}</td>
-                  <td className="py-2 text-gray-500">{fmtPct(r.realRate)}</td>
+                  <td className="text-ink-2">{fmtPct(r.rate)}</td>
+                  <td className="text-ink-dim">{fmtPct(r.realRate)}</td>
                   {r.values.map((v, i) => (
-                    <td key={i} className={`py-2 text-right font-mono text-xs ${r.current ? 'text-positive' : 'text-gray-300'}`}>{fmt(v)}</td>
+                    <td key={i} className={`text-right text-xs pr-1 ${r.current ? 'text-positive' : 'text-ink-2'}`}>{fmt(v)}</td>
                   ))}
                 </tr>
               ))}
