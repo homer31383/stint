@@ -328,6 +328,28 @@ export default function App() {
   const [authEmail, setAuthEmail] = useState("");
   const [authPassword, setAuthPassword] = useState("");
 
+  // URL quick actions: /?action=log-today opens today's timesheet with a new
+  // entry started. The param is stripped on load so a refresh does not repeat
+  // it, and the action waits in sessionStorage until the user is signed in.
+  const [quickAction, setQuickAction] = useState(() => {
+    const params = new URLSearchParams(window.location.search);
+    const action = params.get("action");
+    if (action) {
+      params.delete("action");
+      const qs = params.toString();
+      window.history.replaceState(null, "", window.location.pathname + (qs ? "?" + qs : "") + window.location.hash);
+      if (action === "log-today") sessionStorage.setItem("stint_quick_action", action);
+    }
+    return sessionStorage.getItem("stint_quick_action");
+  });
+  useEffect(() => {
+    if (!quickAction || authLoading || (supabase && !session)) return;
+    sessionStorage.removeItem("stint_quick_action");
+    if (quickAction === "log-today") setTab("time");
+    else setQuickAction(null);
+  }, [quickAction, authLoading, session]);
+  const quickActionDone = () => setQuickAction(null);
+
   useEffect(() => {
     if (!supabase) return;
     supabase.auth.getSession().then(({ data: { session: s } }) => {
@@ -644,7 +666,7 @@ export default function App() {
       {/* MAIN */}
       <main style={{ flex: 1, overflow: "auto", padding: isMobile ? "16px 0" : "28px 32px", paddingBottom: isMobile ? "72px" : undefined, maxWidth: isMobile ? "100%" : "1100px", width: "100%", margin: "0 auto" }}>
         {tab === "dashboard" && <Dashboard {...{clients, projects, pencils, timeEntries, setTimeEntries, invoices, settings, setTab, getClient, getProject, getRate, isMobile}} />}
-        {tab === "time" && <Time {...{timeEntries, setTimeEntries, projects, clients, pencils, settings, dayNotes, setDayNotes, activeTimer, startTimer, stopTimer, elapsed, getClient, getProject, getRate, isMobile}} />}
+        {tab === "time" && <Time {...{timeEntries, setTimeEntries, projects, clients, pencils, settings, dayNotes, setDayNotes, activeTimer, startTimer, stopTimer, elapsed, getClient, getProject, getRate, isMobile, quickAction, quickActionDone}} />}
         {tab === "pencils" && <Pencils {...{pencils, setPencils, projects, setProjects, clients, setClients, getClient, getProject, settings, isMobile}} />}
         {tab === "invoices" && <Invoices {...{invoices, setInvoices, timeEntries, projects, clients, pencils, settings, setSettings, getClient, getProject, getRate, isMobile}} />}
         {tab === "clients" && <Clients {...{clients, setClients, projects, setProjects, settings, timeEntries, pencils, invoices, getClient, getProject, getRate, isMobile}} />}
@@ -900,7 +922,7 @@ function Muted({ children }) {
 // ============================================================
 // TIME TRACKING
 // ============================================================
-function Time({ timeEntries, setTimeEntries, projects, clients, pencils, settings, dayNotes, setDayNotes, activeTimer, startTimer, stopTimer, elapsed, getClient, getProject, getRate, isMobile }) {
+function Time({ timeEntries, setTimeEntries, projects, clients, pencils, settings, dayNotes, setDayNotes, activeTimer, startTimer, stopTimer, elapsed, getClient, getProject, getRate, isMobile, quickAction, quickActionDone }) {
   const [weekOffset, setWeekOffset] = useState(0);
   const [activeProject, setActiveProject] = useState(null); // { projectId, serviceType }
   const [selectedClient, setSelectedClient] = useState(""); // filter projects by client, "__all__" = show all
@@ -1086,6 +1108,14 @@ function Time({ timeEntries, setTimeEntries, projects, clients, pencils, setting
   // Batch fill
   const [showBatch, setShowBatch] = useState(false);
   const [batchForm, setBatchForm] = useState({ projectId: "", serviceType: "day_rate", date: todayISO(), startHour: 9, endHour: 17 });
+
+  // Quick action from App (/?action=log-today): start a new entry for today
+  useEffect(() => {
+    if (quickAction !== "log-today") return;
+    setBatchForm(f => ({ ...f, date: todayISO() }));
+    setShowBatch(true);
+    quickActionDone();
+  }, []);
 
   const fillBatch = () => {
     if (!batchForm.projectId) return;
