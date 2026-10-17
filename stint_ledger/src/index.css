@@ -441,6 +441,43 @@ body.fj {
   padding: 3px 7px;
 }
 
+/* Demo mode corner stamp: a cream scrap carrying a clay stamp, fixed over
+   every view so demo numbers can never pass for real ones. Bottom-right on
+   desktop (clear of page-title buttons), top-right on mobile (clear of the
+   tab bar). Never intercepts taps. */
+body.fj .demo-stamp {
+  position: fixed;
+  z-index: 40;
+  right: 18px;
+  bottom: 18px;
+  padding: 8px 12px;
+  background: var(--paper);
+  border-radius: 3px 5px 2px 4px;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  transform: rotate(-1.2deg);
+  pointer-events: none;
+}
+body.fj .demo-stamp .stamp {
+  --stamp-rot: -5deg;
+  font-size: 15px;
+  border-width: 2.6px;
+  padding: 5px 10px;
+  opacity: 0.9;
+}
+@media (max-width: 767px) {
+  body.fj .demo-stamp {
+    top: calc(8px + env(safe-area-inset-top, 0px));
+    right: 8px;
+    bottom: auto;
+    padding: 5px 8px;
+  }
+  body.fj .demo-stamp .stamp {
+    font-size: 12px;
+    border-width: 2px;
+    padding: 4px 7px;
+  }
+}
+
 /* ---------- Buttons ---------- */
 
 .btn-tag {

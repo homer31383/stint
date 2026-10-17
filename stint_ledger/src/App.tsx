@@ -1,7 +1,9 @@
-import React, { Component, useState, useEffect, useLayoutEffect, useRef } from 'react';
+import React, { Component, useState, useEffect, useLayoutEffect, useRef, useCallback, useMemo } from 'react';
 import type { Session } from '@supabase/supabase-js';
 import type { ViewId } from './lib/types';
 import { supabase } from './lib/supabase';
+import { DemoContext, useDemoToggle, readDemoFlag, writeDemoFlag, clearDemoMemory } from './lib/demo';
+import { DEMO_MONTHLY_EXPENSES } from './lib/demoData';
 import { useStintData } from './hooks/useStintData';
 import { useAccountBalances } from './hooks/useAccountBalances';
 import { useSettingsSync } from './hooks/useSettingsSync';
@@ -85,25 +87,63 @@ function LoadingScreen() {
 
 const DEFAULT_MONTHLY_EXPENSES = 8750;
 
+// Persistent corner stamp so demo data can never pass for real numbers.
+function DemoStamp() {
+  return (
+    <div className="demo-stamp" aria-label="Demo data">
+      <span className="stamp stamp-clay">Demo data</span>
+    </div>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [view, setView] = useState<ViewId>('dashboard');
-  const { data, loading, syncing, error, refresh } = useStintData();
-  const { balances, detailed, setDetailed, loaded } = useAccountBalances();
-  const sync = useSettingsSync();
-  const mainRef = useRef<HTMLElement>(null);
+  const [demo, setDemoFlag] = useState(readDemoFlag);
+
+  // Every toggle starts the demo fresh and drops any in-demo edits.
+  const setDemo = useCallback((on: boolean) => {
+    clearDemoMemory();
+    writeDemoFlag(on);
+    setDemoFlag(on);
+  }, []);
+  const demoState = useMemo(() => ({ demo, setDemo }), [demo, setDemo]);
 
   useEffect(() => {
     supabase.auth.getSession().then(({ data: { session: s } }) => {
       setSession(s);
       setAuthLoading(false);
     });
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
+      // Signing out ends the demo, so the next sign-in opens on real data.
+      // Done here rather than before signOut() so real numbers never flash.
+      if (event === 'SIGNED_OUT') setDemo(false);
     });
     return () => subscription.unsubscribe();
-  }, []);
+  }, [setDemo]);
+
+  if (authLoading) return <LoadingScreen />;
+
+  if (!session) return <Login />;
+
+  // Keyed on the mode: toggling remounts every data hook, so demo hooks start
+  // from the fixtures and real hooks reload from IndexedDB untouched.
+  return (
+    <DemoContext.Provider value={demoState}>
+      <Ledger key={demo ? 'demo' : 'real'} view={view} setView={setView} />
+    </DemoContext.Provider>
+  );
+}
+
+function Ledger({ view, setView }: { view: ViewId; setView: (v: ViewId) => void }) {
+  const { demo, setDemo } = useDemoToggle();
+  const { data, loading, syncing, error, refresh } = useStintData();
+  const { balances, detailed, setDetailed, loaded } = useAccountBalances();
+  const sync = useSettingsSync();
+  const mainRef = useRef<HTMLElement>(null);
+  const monthlyExpenses = demo ? DEMO_MONTHLY_EXPENSES : DEFAULT_MONTHLY_EXPENSES;
 
   // Assign each paper scrap its settle order before first paint of a view.
   // Cards added later by state changes have no index and land immediately.
@@ -112,17 +152,14 @@ export default function App() {
     if (!root) return;
     const cards = root.querySelectorAll<HTMLElement>('.paper, .scrap');
     cards.forEach((el, i) => el.style.setProperty('--i', String(Math.min(i, SETTLE_STAGGER_CAP))));
-  }, [view, session, authLoading, loading, loaded]);
-
-  if (authLoading) return <LoadingScreen />;
-
-  if (!session) return <Login />;
+  }, [view, loading, loaded]);
 
   if (loading && !loaded) return <LoadingScreen />;
 
   return (
     <ErrorBoundary onReset={() => setView('dashboard')}>
       <div className="min-h-screen">
+        {demo && <DemoStamp />}
         <Navigation
           active={view}
           onNavigate={setView}
@@ -140,6 +177,8 @@ export default function App() {
           lastPulled={sync.lastPulled}
           serverUpdatedAt={sync.serverUpdatedAt}
           syncError={sync.error}
+          demo={demo}
+          onToggleDemo={setDemo}
           onSignOut={() => supabase.auth.signOut()}
         />
 
@@ -153,7 +192,7 @@ export default function App() {
           )}
 
           {view === 'dashboard' && (
-            <Dashboard data={data} balances={balances} monthlyExpenses={DEFAULT_MONTHLY_EXPENSES} />
+            <Dashboard data={data} balances={balances} monthlyExpenses={monthlyExpenses} />
           )}
           {view === 'utilization' && <Utilization data={data} />}
           {view === 'pipeline' && <Pipeline data={data} />}
@@ -161,7 +200,7 @@ export default function App() {
           {view === 'planner' && <Planner data={data} balances={balances} />}
           {view === 'expenses' && <Expenses data={data} balances={balances} />}
           {view === 'networth' && (
-            <NetWorth detailed={detailed} balances={balances} onSave={setDetailed} monthlyExpenses={DEFAULT_MONTHLY_EXPENSES} />
+            <NetWorth detailed={detailed} balances={balances} onSave={setDetailed} monthlyExpenses={monthlyExpenses} />
           )}
           {view === 'retirement' && <Retirement balances={balances} />}
           {view === 'plans' && <Plans />}

@@ -285,6 +285,18 @@ PC is source of truth. Push from PC, pull on phone.
 
 **Timestamps:** `lastPushed`/`lastPulled` in localStorage (survive reload), `serverUpdatedAt` fetched from Supabase on mount.
 
+## Demo Mode
+
+A sidebar checkbox (also in the mobile sync bar) swaps every data hook onto the fictional fixtures in `src/lib/demoData.ts` so the app can be shown to other people.
+
+- `src/lib/demo.ts`: `DemoContext`, `useDemo()`, the sessionStorage flag (`stint-ledger-demo`, never synced, so a fresh launch is always real) and an in-memory store for edits made during a demo.
+- `App.tsx` renders `<Ledger key={demo ? 'demo' : 'real'}>`, so toggling remounts every hook: demo hooks start from fixtures, real hooks reload from IDB. Hooks can treat the flag as fixed for their lifetime.
+- In demo, hooks never read or write IDB or Supabase. Writes go to the in-memory store (shared across views) and are dropped on any toggle or sign out.
+- Disabled in demo: settings Push/Pull, Stint refresh. Price refresh uses fixed demo prices. Export generates from demo data with a DEMO DATA header and does not touch `export-last-exported`.
+- View-level copy that names real things is demo-aware: NetWorth/export account labels (`DEMO_ACCOUNT_LABELS`, slots not listed are hidden), Planner rate card presets and the SPY notes.
+- A clay "DEMO DATA" stamp is fixed in the corner (`.demo-stamp`) and the sidebar wordmark reads "Stint Ledger · demo".
+- When adding a new hook or hardcoded personal copy, make it demo-aware the same way.
+
 ## Retirement View
 
 - **Scenario inputs**: current age, retirement age, annual IRA/HSA contributions, pre/post-retirement return rates, inflation, monthly spending, Social Security

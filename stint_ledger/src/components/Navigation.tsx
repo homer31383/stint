@@ -1,6 +1,7 @@
 import React from 'react';
 import type { ViewId } from '../lib/types';
 import { Fleuron } from './Ink';
+import { HandCheck } from './HandCheck';
 
 interface NavItem {
   id: ViewId;
@@ -35,6 +36,8 @@ interface NavigationProps {
   lastPulled?: string | null;
   serverUpdatedAt?: string | null;
   syncError?: string | null;
+  demo?: boolean;
+  onToggleDemo?: (on: boolean) => void;
   onSignOut?: () => void;
 }
 
@@ -47,8 +50,10 @@ function fmtTs(iso: string | null | undefined) {
 
 export function Navigation({
   active, onNavigate, syncing, onRefresh, lastSynced,
-  onPush, onPull, pushing, pulling, lastPushed, lastPulled, serverUpdatedAt, syncError, onSignOut,
+  onPush, onPull, pushing, pulling, lastPushed, lastPulled, serverUpdatedAt, syncError,
+  demo = false, onToggleDemo, onSignOut,
 }: NavigationProps) {
+  const syncLocked = demo || pushing || pulling;
   return (
     <>
       {/* Desktop sidebar: desk-toned, active item is a small paper tab */}
@@ -56,6 +61,7 @@ export function Navigation({
         <div className="p-5 border-b border-sagelabel/10">
           <h1 className="fj-wordmark text-lg inline-flex items-center gap-1.5">
             Stint Ledger
+            {demo && <span className="text-clay"> · demo</span>}
             <Fleuron className="text-sagelabel/80" />
           </h1>
           <p className="hand fj-desk-dim text-base leading-none mt-0.5">the field journal</p>
@@ -79,13 +85,14 @@ export function Navigation({
           <div>
             <div className="hand fj-desk-dim text-base leading-none mb-1.5">settings sync</div>
             <div className="flex gap-2">
-              <button onClick={onPush} disabled={pushing || pulling} className="btn-tag flex-1">
+              <button onClick={onPush} disabled={syncLocked} className="btn-tag flex-1">
                 {pushing ? 'Pushing' : 'Push ↑'}
               </button>
-              <button onClick={onPull} disabled={pushing || pulling} className="btn-tag flex-1">
+              <button onClick={onPull} disabled={syncLocked} className="btn-tag flex-1">
                 {pulling ? 'Pulling' : 'Pull ↓'}
               </button>
             </div>
+            {demo && <div className="mt-1 text-[10px] font-mono fj-desk-dim">disabled in demo</div>}
             <div className="mt-1.5 space-y-0.5 text-[10px] font-mono fj-desk-dim">
               <div>Server: {fmtTs(serverUpdatedAt)}</div>
               <div>Pushed: {fmtTs(lastPushed)}</div>
@@ -98,15 +105,24 @@ export function Navigation({
 
           {/* Refresh data */}
           <div>
-            <button onClick={onRefresh} disabled={syncing} className="btn-stamp on-desk w-full">
+            <button onClick={onRefresh} disabled={demo || syncing} className="btn-stamp on-desk w-full">
               {syncing ? 'Syncing' : 'Refresh data'}
             </button>
-            {lastSynced && (
+            {demo && <div className="text-[10px] font-mono fj-desk-dim mt-1">disabled in demo</div>}
+            {!demo && lastSynced && (
               <div className="text-[10px] font-mono fj-desk-dim mt-1">
                 Last sync: {new Date(lastSynced).toLocaleTimeString()}
               </div>
             )}
           </div>
+
+          {/* Demo mode: swaps in the fictional dataset */}
+          <HandCheck
+            checked={demo}
+            onChange={(on) => onToggleDemo?.(on)}
+            label="Demo mode"
+            className="fj-desk-text text-sm"
+          />
 
           {/* Sign out */}
           <button onClick={onSignOut} className="btn-link clay w-full text-center">
@@ -117,13 +133,21 @@ export function Navigation({
 
       {/* Mobile sync bar */}
       <div className="tabbar md:hidden fixed bottom-[calc(var(--mobile-tab-height,3.5rem)+env(safe-area-inset-bottom,0px))] left-0 right-0 z-30 px-3 py-1.5 flex items-center gap-2">
-        <button onClick={onPush} disabled={pushing || pulling} className="btn-tag">
+        <button onClick={onPush} disabled={syncLocked} className="btn-tag">
           {pushing ? '…' : 'Push ↑'}
         </button>
-        <button onClick={onPull} disabled={pushing || pulling} className="btn-tag">
+        <button onClick={onPull} disabled={syncLocked} className="btn-tag">
           {pulling ? '…' : 'Pull ↓'}
         </button>
-        <span className="text-[10px] font-mono fj-desk-dim ml-auto">Server: {fmtTs(serverUpdatedAt)}</span>
+        <HandCheck
+          checked={demo}
+          onChange={(on) => onToggleDemo?.(on)}
+          label="Demo"
+          className="fj-desk-text text-xs"
+        />
+        <span className="text-[10px] font-mono fj-desk-dim ml-auto">
+          {demo ? 'sync disabled in demo' : `Server: ${fmtTs(serverUpdatedAt)}`}
+        </span>
         {syncError && <span className="text-[10px] font-mono text-clay truncate max-w-[120px]">{syncError}</span>}
       </div>
 

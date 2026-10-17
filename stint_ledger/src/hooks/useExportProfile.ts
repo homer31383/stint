@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { saveExportProfile, loadExportProfile } from '../lib/storage';
+import { useDemo, demoRead, demoWrite } from '../lib/demo';
+import { DEMO_PROFILE } from '../lib/demoData';
 
 export interface ExportProfile {
   profileText: string;
@@ -31,10 +33,20 @@ const DEFAULTS: ExportProfile = {
 };
 
 export function useExportProfile() {
-  const [profile, setProfile] = useState<ExportProfile>(DEFAULTS);
-  const [loaded, setLoaded] = useState(false);
+  const demo = useDemo();
+  const defaults = demo ? DEMO_PROFILE : DEFAULTS;
+  const [profile, setProfile] = useState<ExportProfile>(
+    () => demo ? demoRead('export-profile', () => DEMO_PROFILE) : DEFAULTS,
+  );
+  const [loaded, setLoaded] = useState(demo);
+
+  const persist = useCallback((next: ExportProfile) => {
+    if (demo) demoWrite('export-profile', next);
+    else saveExportProfile(next as unknown as Record<string, unknown>);
+  }, [demo]);
 
   useEffect(() => {
+    if (demo) return;
     let cancelled = false;
     (async () => {
       try {
@@ -53,29 +65,29 @@ export function useExportProfile() {
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [demo]);
 
   const updateProfileText = useCallback((text: string) => {
     setProfile(prev => {
       const next = { ...prev, profileText: text, lastUpdated: Date.now() };
-      saveExportProfile(next as unknown as Record<string, unknown>);
+      persist(next);
       return next;
     });
-  }, []);
+  }, [persist]);
 
   const updateQuestionsText = useCallback((text: string) => {
     setProfile(prev => {
       const next = { ...prev, questionsText: text, lastUpdated: Date.now() };
-      saveExportProfile(next as unknown as Record<string, unknown>);
+      persist(next);
       return next;
     });
-  }, []);
+  }, [persist]);
 
   const reset = useCallback(() => {
-    const next = { ...DEFAULTS, lastUpdated: Date.now() };
+    const next = { ...defaults, lastUpdated: Date.now() };
     setProfile(next);
-    saveExportProfile(next as unknown as Record<string, unknown>);
-  }, []);
+    persist(next);
+  }, [defaults, persist]);
 
-  return { profile, loaded, updateProfileText, updateQuestionsText, reset };
+  return { profile, defaults, loaded, updateProfileText, updateQuestionsText, reset };
 }

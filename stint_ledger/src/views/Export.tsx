@@ -2,7 +2,8 @@ import React, { useState, useCallback, useMemo } from 'react';
 import type { StintData, AccountBalances, DetailedBalances } from '../lib/types';
 import { Panel } from '../components/Panel';
 import { PageTitle } from '../components/Ink';
-import { useExportProfile, DEFAULT_PROFILE_TEXT, DEFAULT_QUESTIONS_TEXT } from '../hooks/useExportProfile';
+import { useExportProfile } from '../hooks/useExportProfile';
+import { useDemo } from '../lib/demo';
 import { useExpenseModel } from '../hooks/useExpenseModel';
 import { usePlannerSettings, type PlannerSettings } from '../hooks/usePlannerSettings';
 import { useRetirementSettings } from '../hooks/useRetirementSettings';
@@ -52,7 +53,8 @@ function makePlannerDefaults(data: StintData): PlannerSettings {
 }
 
 export function Export({ data, balances, detailed }: Props) {
-  const { profile, updateProfileText, updateQuestionsText, reset: resetProfile } = useExportProfile();
+  const demo = useDemo();
+  const { profile, defaults, updateProfileText, updateQuestionsText, reset: resetProfile } = useExportProfile();
   const { model: expenseModel } = useExpenseModel();
   const plannerDefaults = useMemo(() => makePlannerDefaults(data), [data]);
   const { settings: planner } = usePlannerSettings(plannerDefaults);
@@ -60,7 +62,7 @@ export function Export({ data, balances, detailed }: Props) {
   const { scenarios } = useSavedScenarios();
 
   const [generated, setGenerated] = useState<string | null>(null);
-  const [lastExported, setLastExported] = useState<string | null>(() => localStorage.getItem(LS_LAST_EXPORTED));
+  const [lastExported, setLastExported] = useState<string | null>(() => demo ? null : localStorage.getItem(LS_LAST_EXPORTED));
   const [copied, setCopied] = useState(false);
   const [showResetConfirm, setShowResetConfirm] = useState(false);
 
@@ -75,12 +77,13 @@ export function Export({ data, balances, detailed }: Props) {
       scenarios,
       profileText: profile.profileText,
       questionsText: profile.questionsText,
+      demo,
     });
     setGenerated(md);
     const now = new Date().toISOString();
-    localStorage.setItem(LS_LAST_EXPORTED, now);
+    if (!demo) localStorage.setItem(LS_LAST_EXPORTED, now);
     setLastExported(now);
-  }, [data, detailed, balances, expenseModel, planner, retirement, scenarios, profile]);
+  }, [data, detailed, balances, expenseModel, planner, retirement, scenarios, profile, demo]);
 
   const download = useCallback(() => {
     const md = generated ?? '';
@@ -139,7 +142,7 @@ export function Export({ data, balances, detailed }: Props) {
         />
         <div className="flex items-center justify-between mt-2 text-[11px]">
           <span className="text-ink-dim">Free-form Markdown. This section appears at the top of the briefing.</span>
-          <button onClick={() => updateProfileText(DEFAULT_PROFILE_TEXT)} className="btn-link">
+          <button onClick={() => updateProfileText(defaults.profileText)} className="btn-link">
             Reset profile to default
           </button>
         </div>
@@ -155,7 +158,7 @@ export function Export({ data, balances, detailed }: Props) {
         />
         <div className="flex items-center justify-between mt-2 text-[11px]">
           <span className="text-ink-dim">One per line. Edit, add, or remove freely.</span>
-          <button onClick={() => updateQuestionsText(DEFAULT_QUESTIONS_TEXT)} className="btn-link">
+          <button onClick={() => updateQuestionsText(defaults.questionsText)} className="btn-link">
             Reset questions to default
           </button>
         </div>

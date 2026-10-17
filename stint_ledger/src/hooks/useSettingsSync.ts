@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { gatherAllSettings, applyAllSettings } from '../lib/storage';
+import { useDemo } from '../lib/demo';
 
 const LS_PUSHED = 'settings-sync-last-pushed';
 const LS_PULLED = 'settings-sync-last-pulled';
@@ -12,6 +13,9 @@ function extractMessage(e: unknown): string {
 }
 
 export function useSettingsSync() {
+  // Demo mode never pushes or pulls: the UI disables both, and these guards
+  // make sure nothing slips through.
+  const demo = useDemo();
   const [pushing, setPushing] = useState(false);
   const [pulling, setPulling] = useState(false);
   const [lastPushed, setLastPushed] = useState<string | null>(
@@ -39,6 +43,7 @@ export function useSettingsSync() {
   }, []);
 
   const push = useCallback(async () => {
+    if (demo) return;
     setPushing(true);
     setError(null);
     try {
@@ -58,9 +63,10 @@ export function useSettingsSync() {
     } finally {
       setPushing(false);
     }
-  }, []);
+  }, [demo]);
 
   const pull = useCallback(async () => {
+    if (demo) return;
     setPulling(true);
     setError(null);
     try {
@@ -81,7 +87,7 @@ export function useSettingsSync() {
       setError(extractMessage(e));
       setPulling(false);
     }
-  }, []);
+  }, [demo]);
 
   return { pushing, pulling, lastPushed, lastPulled, serverUpdatedAt, error, push, pull };
 }

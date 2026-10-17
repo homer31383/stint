@@ -2,9 +2,12 @@ import { useState, useEffect, useCallback } from 'react';
 import type { StintData } from '../lib/types';
 import { fetchStintData } from '../lib/supabase';
 import { saveStintCache, loadStintCache } from '../lib/storage';
+import { useDemo, demoRead } from '../lib/demo';
+import { buildDemoStint } from '../lib/demoData';
 
 export function useStintData() {
-  const [data, setData] = useState<StintData>({
+  const demo = useDemo();
+  const [data, setData] = useState<StintData>(() => demo ? demoRead('stint', buildDemoStint) : {
     clients: [],
     projects: [],
     timeEntries: [],
@@ -13,12 +16,13 @@ export function useStintData() {
     settings: null,
     lastSynced: null,
   });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!demo);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   // Load cached data first, then try to sync
   useEffect(() => {
+    if (demo) return;
     let mounted = true;
     (async () => {
       try {
@@ -49,9 +53,11 @@ export function useStintData() {
       }
     })();
     return () => { mounted = false; };
-  }, []);
+  }, [demo]);
 
   const refresh = useCallback(async () => {
+    // Demo Stint data is static
+    if (demo) return;
     setSyncing(true);
     setError(null);
     try {
@@ -63,7 +69,7 @@ export function useStintData() {
     } finally {
       setSyncing(false);
     }
-  }, []);
+  }, [demo]);
 
   return { data, loading, syncing, error, refresh };
 }

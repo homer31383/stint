@@ -24,6 +24,8 @@ import { MiniBar } from '../components/MiniBar';
 import { PageTitle } from '../components/Ink';
 import { fmt, fmtPct } from '../lib/helpers';
 import { fetchPrices } from '../lib/prices';
+import { useDemo } from '../lib/demo';
+import { DEMO_ACCOUNT_LABELS, fetchDemoPrices } from '../lib/demoData';
 import { estimateLtcgTax, LTCG_RATE } from '../lib/tax';
 
 const HOLDINGS_KEY_SET = new Set<FixedAccountKey>(HOLDINGS_ENABLED_KEYS);
@@ -154,6 +156,15 @@ const GROUPS: AccountGroup[] = [
   },
 ];
 
+// Demo mode shows generic account names and hides the slots the demo leaves empty.
+function accountsFor(group: AccountGroup, demo: boolean): AccountEntry[] {
+  if (!demo) return group.accounts;
+  return group.accounts.flatMap((a) => {
+    const label = DEMO_ACCOUNT_LABELS[a.key];
+    return label ? [{ key: a.key, label }] : [];
+  });
+}
+
 const SECTIONS: { heading: string; groups: number[] }[] = [
   { heading: 'Banking', groups: [0, 1, 2] },
   { heading: 'Investments', groups: [3, 4, 5] },
@@ -211,6 +222,9 @@ interface NewAccountDraft {
 }
 
 export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props) {
+  const demo = useDemo();
+  // Demo holdings quote fixed prices: offline-safe and never stale mid-demo.
+  const getPrices = demo ? fetchDemoPrices : fetchPrices;
   const [collapsed, setCollapsed] = useState<Record<string, boolean>>({});
   const [drafts, setDrafts] = useState<Partial<Record<SectionKey, NewAccountDraft>>>({});
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null);
@@ -285,7 +299,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
       setPriceMsg({ kind: 'warn', text: 'No tickers to refresh.' });
       return;
     }
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    if (!demo && typeof navigator !== 'undefined' && navigator.onLine === false) {
       setPriceMsg({ kind: 'warn', text: 'You are offline. Showing the last fetched prices.' });
       return;
     }
@@ -293,7 +307,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
     setRefreshing(true);
     setPriceMsg(null);
     try {
-      const { prices, failed, skipped } = await fetchPrices(tickers);
+      const { prices, failed, skipped } = await getPrices(tickers);
       if (Object.keys(prices).length === 0) {
         if (failed.length === 0) {
           setPriceMsg({ kind: 'warn', text: `No fetchable tickers (skipped: ${skipped.join(', ')}).` });
@@ -328,14 +342,14 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
     } finally {
       setRefreshing(false);
     }
-  }, [detailed, onSave, refreshing]);
+  }, [detailed, onSave, refreshing, demo, getPrices]);
 
   // Refresh a single ticker and update every holding sharing it (a shared
   // ticker left un-updated would show a stale price next to a fresh one).
   const refreshTicker = useCallback(async (rawTicker: string) => {
     const t = rawTicker.trim().toUpperCase();
     if (!t || rowRefreshing.has(t)) return;
-    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    if (!demo && typeof navigator !== 'undefined' && navigator.onLine === false) {
       setPriceMsg({ kind: 'warn', text: 'You are offline. Showing the last fetched prices.' });
       return;
     }
@@ -343,7 +357,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
     setRowRefreshing(prev => new Set(prev).add(t));
     setPriceMsg(null);
     try {
-      const { prices, skipped } = await fetchPrices([t]);
+      const { prices, skipped } = await getPrices([t]);
       const p = prices[t];
       if (p == null) {
         if (skipped.includes(t)) {
@@ -373,7 +387,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
         return next;
       });
     }
-  }, [detailed, onSave, rowRefreshing]);
+  }, [detailed, onSave, rowRefreshing, demo, getPrices]);
 
   const startDraft = useCallback((section: SectionKey, defaultType: CustomAccountType) => {
     setDrafts(prev => ({ ...prev, [section]: { name: '', balance: '', type: defaultType } }));
@@ -582,7 +596,7 @@ export function NetWorth({ detailed, balances, onSave, monthlyExpenses }: Props)
                   </button>
                   {!isCollapsed && (
                     <div className="space-y-2 pl-4 border-l border-dotted border-ink-dim/50 ml-1">
-                      {group.accounts.map((acct) => {
+                      {accountsFor(group, demo).map((acct) => {
                         const isMuted = muted.has(acct.key);
                         const holdingsKey: HoldingsAccountKey | null = isHoldingsKey(acct.key) ? acct.key : null;
                         const holdingsList = holdingsKey ? (detailed.holdings?.[holdingsKey] ?? []) : [];

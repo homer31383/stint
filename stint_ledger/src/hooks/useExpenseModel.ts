@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { saveExpenseModel, loadExpenseModel, clearExpenseModel } from '../lib/storage';
+import { useDemo, demoRead, demoWrite } from '../lib/demo';
+import { buildDemoExpenseModel } from '../lib/demoData';
 
 function uuid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -54,16 +56,21 @@ function makeDefaults(): ExpenseModel {
   };
 }
 
-function persist(model: ExpenseModel) {
-  saveExpenseModel(model as unknown as Record<string, unknown>);
+function persist(model: ExpenseModel, demo: boolean) {
+  if (demo) demoWrite('expense-model', model);
+  else saveExpenseModel(model as unknown as Record<string, unknown>);
 }
 
 export function useExpenseModel() {
-  const [model, setModel] = useState<ExpenseModel>(makeDefaults);
-  const [loaded, setLoaded] = useState(false);
-  const defaultsRef = useRef(makeDefaults);
+  const demo = useDemo();
+  const [model, setModel] = useState<ExpenseModel>(
+    () => demo ? demoRead('expense-model', buildDemoExpenseModel) : makeDefaults(),
+  );
+  const [loaded, setLoaded] = useState(demo);
+  const defaultsRef = useRef(demo ? buildDemoExpenseModel : makeDefaults);
 
   useEffect(() => {
+    if (demo) return;
     let cancelled = false;
     (async () => {
       try {
@@ -84,7 +91,7 @@ export function useExpenseModel() {
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [demo]);
 
   const addRecurring = useCallback((expense: Omit<RecurringExpense, 'id'>) => {
     setModel(prev => {
@@ -93,10 +100,10 @@ export function useExpenseModel() {
         recurring: [...prev.recurring, { ...expense, id: uuid() }],
         lastUpdated: Date.now(),
       };
-      persist(next);
+      persist(next, demo);
       return next;
     });
-  }, []);
+  }, [demo]);
 
   const updateRecurring = useCallback((id: string, updates: Partial<Omit<RecurringExpense, 'id'>>) => {
     setModel(prev => {
@@ -105,10 +112,10 @@ export function useExpenseModel() {
         recurring: prev.recurring.map(r => r.id === id ? { ...r, ...updates } : r),
         lastUpdated: Date.now(),
       };
-      persist(next);
+      persist(next, demo);
       return next;
     });
-  }, []);
+  }, [demo]);
 
   const removeRecurring = useCallback((id: string) => {
     setModel(prev => {
@@ -117,10 +124,10 @@ export function useExpenseModel() {
         recurring: prev.recurring.filter(r => r.id !== id),
         lastUpdated: Date.now(),
       };
-      persist(next);
+      persist(next, demo);
       return next;
     });
-  }, []);
+  }, [demo]);
 
   const addOneTime = useCallback((expense: Omit<OneTimeExpense, 'id'>) => {
     setModel(prev => {
@@ -129,10 +136,10 @@ export function useExpenseModel() {
         oneTime: [...prev.oneTime, { ...expense, id: uuid() }],
         lastUpdated: Date.now(),
       };
-      persist(next);
+      persist(next, demo);
       return next;
     });
-  }, []);
+  }, [demo]);
 
   const updateOneTime = useCallback((id: string, updates: Partial<Omit<OneTimeExpense, 'id'>>) => {
     setModel(prev => {
@@ -141,10 +148,10 @@ export function useExpenseModel() {
         oneTime: prev.oneTime.map(e => e.id === id ? { ...e, ...updates } : e),
         lastUpdated: Date.now(),
       };
-      persist(next);
+      persist(next, demo);
       return next;
     });
-  }, []);
+  }, [demo]);
 
   const removeOneTime = useCallback((id: string) => {
     setModel(prev => {
@@ -153,18 +160,18 @@ export function useExpenseModel() {
         oneTime: prev.oneTime.filter(e => e.id !== id),
         lastUpdated: Date.now(),
       };
-      persist(next);
+      persist(next, demo);
       return next;
     });
-  }, []);
+  }, [demo]);
 
   const setFullYearProjection = useCallback((on: boolean) => {
     setModel(prev => {
       const next = { ...prev, fullYearProjection: on, lastUpdated: Date.now() };
-      persist(next);
+      persist(next, demo);
       return next;
     });
-  }, []);
+  }, [demo]);
 
   const reorderRecurring = useCallback((fromIndex: number, toIndex: number) => {
     setModel(prev => {
@@ -172,22 +179,23 @@ export function useExpenseModel() {
       const [moved] = items.splice(fromIndex, 1);
       items.splice(toIndex, 0, moved);
       const next = { ...prev, recurring: items, lastUpdated: Date.now() };
-      persist(next);
+      persist(next, demo);
       return next;
     });
-  }, []);
+  }, [demo]);
 
   const replaceModel = useCallback((newModel: ExpenseModel) => {
     const next = { ...newModel, lastUpdated: Date.now() };
     setModel(next);
-    persist(next);
-  }, []);
+    persist(next, demo);
+  }, [demo]);
 
   const reset = useCallback(async () => {
     const defaults = defaultsRef.current();
     setModel(defaults);
-    await clearExpenseModel();
-  }, []);
+    if (demo) demoWrite('expense-model', defaults);
+    else await clearExpenseModel();
+  }, [demo]);
 
   return {
     model,

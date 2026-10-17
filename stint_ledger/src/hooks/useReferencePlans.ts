@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { saveReferencePlans, loadReferencePlans } from '../lib/storage';
+import { useDemo, demoRead, demoWrite } from '../lib/demo';
+import { buildDemoPlans } from '../lib/demoData';
 
 function uuid(): string {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
@@ -198,15 +200,20 @@ function makeSeed(): ReferencePlansModel {
   };
 }
 
-function persist(model: ReferencePlansModel) {
-  saveReferencePlans(model as unknown as Record<string, unknown>);
+function persist(model: ReferencePlansModel, demo: boolean) {
+  if (demo) demoWrite('reference-plans', model);
+  else saveReferencePlans(model as unknown as Record<string, unknown>);
 }
 
 export function useReferencePlans() {
-  const [model, setModel] = useState<ReferencePlansModel>(makeSeed);
-  const [loaded, setLoaded] = useState(false);
+  const demo = useDemo();
+  const [model, setModel] = useState<ReferencePlansModel>(
+    () => demo ? demoRead('reference-plans', buildDemoPlans) : makeSeed(),
+  );
+  const [loaded, setLoaded] = useState(demo);
 
   useEffect(() => {
+    if (demo) return;
     let cancelled = false;
     (async () => {
       try {
@@ -231,15 +238,15 @@ export function useReferencePlans() {
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [demo]);
 
   const mutate = useCallback((fn: (prev: ReferencePlansModel) => ReferencePlansModel) => {
     setModel(prev => {
       const next = { ...fn(prev), lastUpdated: Date.now() };
-      persist(next);
+      persist(next, demo);
       return next;
     });
-  }, []);
+  }, [demo]);
 
   const mutateSection = useCallback((section: PlanSectionId, fn: (plans: PlanCard[]) => PlanCard[]) => {
     mutate(prev => ({

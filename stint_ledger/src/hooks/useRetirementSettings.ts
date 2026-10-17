@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { saveRetirementSettings, loadRetirementSettings, clearRetirementSettings } from '../lib/storage';
+import { useDemo, demoRead, demoWrite } from '../lib/demo';
+import { DEMO_RETIREMENT } from '../lib/demoData';
 
 export interface RetirementSettings {
   currentAge: number;
@@ -28,13 +30,17 @@ export const RETIREMENT_DEFAULTS: RetirementSettings = {
 };
 
 export function useRetirementSettings(defaults: RetirementSettings = RETIREMENT_DEFAULTS) {
-  const [settings, setSettings] = useState<RetirementSettings>(defaults);
-  const [loaded, setLoaded] = useState(false);
+  const demo = useDemo();
+  const [settings, setSettings] = useState<RetirementSettings>(
+    () => demo ? demoRead('retirement-settings', () => DEMO_RETIREMENT) : defaults,
+  );
+  const [loaded, setLoaded] = useState(demo);
   const defaultsRef = useRef(defaults);
-  defaultsRef.current = defaults;
+  defaultsRef.current = demo ? DEMO_RETIREMENT : defaults;
 
   // Load from IndexedDB on mount
   useEffect(() => {
+    if (demo) return;
     let cancelled = false;
     (async () => {
       const saved = await loadRetirementSettings();
@@ -44,22 +50,24 @@ export function useRetirementSettings(defaults: RetirementSettings = RETIREMENT_
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [demo]);
 
   // Update a single setting and persist
   const update = useCallback(<K extends keyof RetirementSettings>(key: K, value: RetirementSettings[K]) => {
     setSettings(prev => {
       const next = { ...prev, [key]: value };
-      saveRetirementSettings(next);
+      if (demo) demoWrite('retirement-settings', next);
+      else saveRetirementSettings(next);
       return next;
     });
-  }, []);
+  }, [demo]);
 
   // Reset all settings to defaults and clear storage
   const reset = useCallback(async () => {
     setSettings(defaultsRef.current);
-    await clearRetirementSettings();
-  }, []);
+    if (demo) demoWrite('retirement-settings', DEMO_RETIREMENT);
+    else await clearRetirementSettings();
+  }, [demo]);
 
   return { settings, update, reset, loaded };
 }

@@ -1,5 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { saveSavedScenarios, loadSavedScenarios } from '../lib/storage';
+import { useDemo, demoRead, demoWrite } from '../lib/demo';
+import { buildDemoScenarios } from '../lib/demoData';
 import type { PlannerSettings } from './usePlannerSettings';
 import type { ExpenseModel } from './useExpenseModel';
 
@@ -42,15 +44,20 @@ function uuid(): string {
   });
 }
 
-function persist(scenarios: SavedScenario[]) {
-  saveSavedScenarios(scenarios as unknown as Record<string, unknown>[]);
+function persist(scenarios: SavedScenario[], demo: boolean) {
+  if (demo) demoWrite('saved-scenarios', scenarios);
+  else saveSavedScenarios(scenarios as unknown as Record<string, unknown>[]);
 }
 
 export function useSavedScenarios() {
-  const [scenarios, setScenarios] = useState<SavedScenario[]>([]);
-  const [loaded, setLoaded] = useState(false);
+  const demo = useDemo();
+  const [scenarios, setScenarios] = useState<SavedScenario[]>(
+    () => demo ? demoRead('saved-scenarios', buildDemoScenarios) : [],
+  );
+  const [loaded, setLoaded] = useState(demo);
 
   useEffect(() => {
+    if (demo) return;
     let cancelled = false;
     (async () => {
       try {
@@ -64,7 +71,7 @@ export function useSavedScenarios() {
       if (!cancelled) setLoaded(true);
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [demo]);
 
   const save = useCallback((
     name: string,
@@ -81,18 +88,18 @@ export function useSavedScenarios() {
         expenseModel,
         metrics,
       }];
-      persist(next);
+      persist(next, demo);
       return next;
     });
-  }, []);
+  }, [demo]);
 
   const remove = useCallback((id: string) => {
     setScenarios(prev => {
       const next = prev.filter(s => s.id !== id);
-      persist(next);
+      persist(next, demo);
       return next;
     });
-  }, []);
+  }, [demo]);
 
   return { scenarios, loaded, save, remove };
 }

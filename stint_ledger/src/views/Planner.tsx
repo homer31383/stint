@@ -7,6 +7,8 @@ import { HandCheck } from '../components/HandCheck';
 import { PageTitle, Note } from '../components/Ink';
 import { estimateTaxes, estimateW2Taxes } from '../lib/tax';
 import { CD_DAY_RATE, SHOOT_SUP_RATE } from '../lib/rates';
+import { useDemo } from '../lib/demo';
+import { DEMO_DAY_RATE, DEMO_RAISED_RATE } from '../lib/demoData';
 import { fmt, fmtPct, fmtCompact, currentYear, weekdaysElapsedYTD, weekdaysBetween } from '../lib/helpers';
 import { usePlannerSettings, migrateLegacyExpenses } from '../hooks/usePlannerSettings';
 import type { PlannerSettings } from '../hooks/usePlannerSettings';
@@ -25,6 +27,15 @@ const DEFAULT_MONTHLY_EXPENSES_BASE = 7150;
 
 export function Planner({ data, balances }: Props) {
   const year = currentYear();
+  const demo = useDemo();
+
+  // Rate card presets and the rollover fund note; demo mode swaps in fictional ones.
+  const rateCard = demo
+    ? [{ label: 'Day rate', rate: DEMO_DAY_RATE }, { label: 'Raised rate', rate: DEMO_RAISED_RATE }]
+    : [{ label: 'CD day rate', rate: CD_DAY_RATE }, { label: 'Shoot supervisor', rate: SHOOT_SUP_RATE }];
+  const baseRate = rateCard[0].rate;
+  const upperRate = rateCard[1].rate;
+  const rolloverFund = demo ? 'an index fund' : 'SPY (S&P 500 ETF)';
 
   // Calculate actual defaults from data
   const computedDefaults = useMemo(() => {
@@ -291,15 +302,15 @@ export function Planner({ data, balances }: Props) {
   // Scenario comparison
   const scenarios = useMemo(() => {
     const configs = [
-      { name: '50% · $1,384', rate: CD_DAY_RATE, util: 0.5 },
-      { name: '55% · $1,384', rate: CD_DAY_RATE, util: 0.55 },
-      { name: '60% · $1,384', rate: CD_DAY_RATE, util: 0.6 },
-      { name: '65% · $1,384', rate: CD_DAY_RATE, util: 0.65 },
-      { name: '70% · $1,384', rate: CD_DAY_RATE, util: 0.7 },
-      { name: '55% · $1,500', rate: SHOOT_SUP_RATE, util: 0.55 },
-      { name: '65% · $1,500', rate: SHOOT_SUP_RATE, util: 0.65 },
-      { name: '60% · $1,600', rate: 1600, util: 0.6 },
-    ];
+      { rate: baseRate, util: 0.5 },
+      { rate: baseRate, util: 0.55 },
+      { rate: baseRate, util: 0.6 },
+      { rate: baseRate, util: 0.65 },
+      { rate: baseRate, util: 0.7 },
+      { rate: upperRate, util: 0.55 },
+      { rate: upperRate, util: 0.65 },
+      { rate: 1600, util: 0.6 },
+    ].map((c) => ({ ...c, name: `${Math.round(c.util * 100)}% · ${fmt(c.rate)}` }));
 
     return configs.map((c) => {
       const gross = c.rate * availableDays * c.util;
@@ -310,7 +321,7 @@ export function Planner({ data, balances }: Props) {
       const isCurrent = c.rate === dayRate && c.util === utilization;
       return { ...c, gross, net: t.netAnnual, savings, daysPerMonth, isCurrent };
     });
-  }, [dayRate, utilization, calc.totalExpenses, calc.monthlyInterest, calc.monthlyInvestmentReturns, fullPicture, availableDays, availablePerMonth]);
+  }, [dayRate, utilization, calc.totalExpenses, calc.monthlyInterest, calc.monthlyInvestmentReturns, fullPicture, availableDays, availablePerMonth, baseRate, upperRate]);
 
   // 5-year projection
   const projection = useMemo(() => {
@@ -360,7 +371,7 @@ export function Planner({ data, balances }: Props) {
   const rolloverComparison = useMemo(() => {
     const scenarios: { rate: number; label: string; current: boolean }[] = [
       { rate: 0.04, label: 'Cash / HYS', current: false },
-      { rate: 0.07, label: 'SPY (S&P 500)', current: true },
+      { rate: 0.07, label: demo ? 'Index fund' : 'SPY (S&P 500)', current: true },
       { rate: 0.10, label: 'Long-term S&P avg', current: false },
       { rate: 0.12, label: 'Aggressive growth', current: false },
     ];
@@ -374,7 +385,7 @@ export function Planner({ data, balances }: Props) {
         values: Array.from({ length: 6 }, (_, y) => balances.rolloverIRA * Math.pow(1 + real, y)),
       };
     });
-  }, [balances.rolloverIRA, inflationRate]);
+  }, [balances.rolloverIRA, inflationRate, demo]);
 
   const projMax = Math.max(...projection.map((p) => p.total), 1);
 
@@ -822,7 +833,7 @@ export function Planner({ data, balances }: Props) {
           label="Rollover IRA Return"
           value={rolloverReturn} min={0} max={0.15} step={0.01}
           format={(v) => fmtPct(v)} onChange={(v) => update('rolloverReturn', v)}
-          sub="Deployed in SPY (S&P 500 ETF). Defaults to equity return"
+          sub={`Deployed in ${rolloverFund}. Defaults to equity return`}
           tone="income"
         />
         <Slider label="Cash Return (HYS/MM)" value={cashReturn} min={0} max={0.07} step={0.005} format={(v) => fmtPct(v, 1)} onChange={(v) => update('cashReturn', v)} tone="income" />
@@ -830,10 +841,7 @@ export function Planner({ data, balances }: Props) {
         {mode === 'freelance' && (
           <div className="ledger-total pt-4 mt-2">
             <div className="flex gap-3 mb-3">
-              {[
-                { label: 'CD day rate', rate: CD_DAY_RATE },
-                { label: 'Shoot supervisor', rate: SHOOT_SUP_RATE },
-              ].map((p) => (
+              {rateCard.map((p) => (
                 <button
                   key={p.rate}
                   onClick={() => update('dayRate', p.rate)}
@@ -1112,7 +1120,7 @@ export function Planner({ data, balances }: Props) {
       {/* Rollover IRA Growth Scenarios */}
       <Panel title="Rollover IRA Growth Scenarios" dense>
         <p className="text-xs text-ink-dim mb-3">
-          Current: SPY at 7% nominal. What {fmt(balances.rolloverIRA)} becomes over 5 years vs. alternative return rates (real, after {fmtPct(inflationRate, 1)} inflation).
+          Current: {demo ? 'index fund' : 'SPY'} at 7% nominal. What {fmt(balances.rolloverIRA)} becomes over 5 years vs. alternative return rates (real, after {fmtPct(inflationRate, 1)} inflation).
         </p>
         <div className="overflow-x-auto">
           <table className="ledger">
