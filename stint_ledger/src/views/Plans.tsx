@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import {
-  useReferencePlans, PLAN_SECTIONS, PLAN_STATUS_OPTIONS,
+  useReferencePlans, PLAN_SECTIONS,
 } from '../hooks/useReferencePlans';
 import type { PlanCard, PlanSectionId, PlanStatus } from '../hooks/useReferencePlans';
 import { HandCheck } from '../components/HandCheck';
@@ -87,7 +87,7 @@ function PlanBody({ body }: { body: string }) {
 
 export function Plans() {
   const {
-    model, addPlan, updatePlan, removePlan, movePlan,
+    model, statusOptions, addPlan, updatePlan, removePlan, movePlan,
     addChecklistItem, updateChecklistItem, removeChecklistItem,
   } = useReferencePlans();
 
@@ -204,7 +204,7 @@ export function Plans() {
                               className="px-2 py-1 text-xs"
                             >
                               <option value="">None</option>
-                              {PLAN_STATUS_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
+                              {statusOptions.map(o => <option key={o} value={o}>{o}</option>)}
                             </select>
                           </label>
                           {isChecklistSection && (

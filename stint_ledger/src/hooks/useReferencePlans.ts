@@ -306,6 +306,8 @@ export function useReferencePlans() {
 
   return {
     model, loaded,
+    // Demo mode offers only the generic statuses.
+    statusOptions: demo ? PLAN_STATUS_OPTIONS.filter(o => o !== 'Pre-leave item') : PLAN_STATUS_OPTIONS,
     addPlan, updatePlan, removePlan, movePlan,
     addChecklistItem, updateChecklistItem, removeChecklistItem,
   };
