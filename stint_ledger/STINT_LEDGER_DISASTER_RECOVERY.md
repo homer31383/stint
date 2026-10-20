@@ -63,6 +63,7 @@ CREATE TABLE stint_clients (
   service_rates JSONB DEFAULT '{}',
   created_at BIGINT NOT NULL
 );
+grant select, insert, update, delete on public.stint_clients to anon, authenticated, service_role;
 
 -- stint_projects
 CREATE TABLE stint_projects (
@@ -77,6 +78,7 @@ CREATE TABLE stint_projects (
   due_date TEXT, notes TEXT,
   created_at BIGINT NOT NULL
 );
+grant select, insert, update, delete on public.stint_projects to anon, authenticated, service_role;
 
 -- stint_time_entries
 CREATE TABLE stint_time_entries (
@@ -91,6 +93,7 @@ CREATE TABLE stint_time_entries (
   notes TEXT,
   created_at BIGINT NOT NULL
 );
+grant select, insert, update, delete on public.stint_time_entries to anon, authenticated, service_role;
 
 -- stint_pencils
 CREATE TABLE stint_pencils (
@@ -103,6 +106,7 @@ CREATE TABLE stint_pencils (
   notes TEXT,
   created_at BIGINT NOT NULL
 );
+grant select, insert, update, delete on public.stint_pencils to anon, authenticated, service_role;
 
 -- stint_invoices
 CREATE TABLE stint_invoices (
@@ -118,6 +122,7 @@ CREATE TABLE stint_invoices (
   date_range TEXT, dates_worked TEXT[] DEFAULT '{}',
   created_at BIGINT NOT NULL
 );
+grant select, insert, update, delete on public.stint_invoices to anon, authenticated, service_role;
 
 -- stint_settings
 CREATE TABLE stint_settings (
@@ -131,6 +136,7 @@ CREATE TABLE stint_settings (
   hide_dollars BOOLEAN NOT NULL DEFAULT FALSE,
   service_rates JSONB DEFAULT '{}'
 );
+grant select, insert, update, delete on public.stint_settings to anon, authenticated, service_role;
 
 -- ledger_sync (owned by Stint Ledger)
 CREATE TABLE ledger_sync (
@@ -138,6 +144,7 @@ CREATE TABLE ledger_sync (
   data JSONB,
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
+grant select, insert, update, delete on public.ledger_sync to anon, authenticated, service_role;
 ```
 
 ### RLS Policies (MUST be applied after table creation)

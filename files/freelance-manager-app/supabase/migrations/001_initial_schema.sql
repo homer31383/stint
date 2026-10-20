@@ -10,6 +10,7 @@ create table if not exists clients (
   service_rates jsonb default '{}',
   created_at bigint default (extract(epoch from now()) * 1000)
 );
+grant select, insert, update, delete on public.clients to anon, authenticated, service_role;
 
 -- Projects
 create table if not exists projects (
@@ -30,6 +31,7 @@ create table if not exists projects (
   notes text,
   created_at bigint default (extract(epoch from now()) * 1000)
 );
+grant select, insert, update, delete on public.projects to anon, authenticated, service_role;
 
 -- Time entries (each row = 1 hour block)
 create table if not exists time_entries (
@@ -44,6 +46,7 @@ create table if not exists time_entries (
   notes text,
   created_at bigint default (extract(epoch from now()) * 1000)
 );
+grant select, insert, update, delete on public.time_entries to anon, authenticated, service_role;
 
 -- Pencils / Bookings
 create table if not exists pencils (
@@ -55,6 +58,7 @@ create table if not exists pencils (
   notes text,
   created_at bigint default (extract(epoch from now()) * 1000)
 );
+grant select, insert, update, delete on public.pencils to anon, authenticated, service_role;
 
 -- Invoices
 create table if not exists invoices (
@@ -75,6 +79,7 @@ create table if not exists invoices (
   dates_worked jsonb default '[]',
   created_at bigint default (extract(epoch from now()) * 1000)
 );
+grant select, insert, update, delete on public.invoices to anon, authenticated, service_role;
 
 -- Settings (single row)
 create table if not exists settings (
@@ -92,6 +97,7 @@ create table if not exists settings (
   hide_dollars boolean default true,
   service_rates jsonb default '{"day_rate": 1200, "shoot_attend": 1500, "hourly": 150, "overtime": 187.5, "expense": 0}'
 );
+grant select, insert, update, delete on public.settings to anon, authenticated, service_role;
 
 -- Indexes for common queries
 create index if not exists idx_time_entries_date on time_entries(date);

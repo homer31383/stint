@@ -7,6 +7,7 @@ create table if not exists stint_day_notes (
   created_at bigint default (extract(epoch from now()) * 1000),
   updated_at bigint
 );
+grant select, insert, update, delete on public.stint_day_notes to anon, authenticated, service_role;
 
 alter table stint_day_notes enable row level security;
 
