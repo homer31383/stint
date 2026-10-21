@@ -22,7 +22,7 @@ Create `.env` in the project root (gitignored):
 
 ```
 VITE_SUPABASE_URL=https://xxsjfeafpzzcmadyvuue.supabase.co
-VITE_SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inh4c2pmZWFmcHp6Y21hZHl2dXVlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzIxMjk0NTQsImV4cCI6MjA4NzcwNTQ1NH0.caN_McmyoWHdq7rtu7gEuiZVoLV0enmxwgiDHU03CTU
+VITE_SUPABASE_ANON_KEY=sb_publishable_gSkFGXFy1Z174HYUp8-ZTQ_2MIDoSXd
 ```
 
 These connect to the shared Supabase instance (also used by Stint and Axiom). The anon key is safe to store — RLS + auth policies restrict access to authenticated users only.
