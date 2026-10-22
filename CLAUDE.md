@@ -1,3 +1,5 @@
+> **Security source of truth:** read `D:\AI\Claude\SECURITY-STATE.md` before changing sign-in, keys, grants, RLS, storage or any public-facing page. It overrides anything in this file that says otherwise (PIN gates, user pickers, RLS off, anon grants, legacy anon or service_role keys, public tables).
+
 ### Table grants (required since Supabase change, Oct 30 2026)
 
 - Every new table in `public` gets explicit grants in the same SQL that creates it, whether it's a migration file or run in the dashboard SQL editor. Never grant anon.
