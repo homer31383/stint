@@ -22,7 +22,7 @@ npx vercel --prod    # deploy to production
 ```
 
 ## Environment
-Copy `env.example` to `.env.local`:
+Copy `env.example` to `.env.local` (`VITE_SUPABASE_ANON_KEY` keeps its name but holds the `sb_publishable_` key; legacy JWT anon keys are disabled):
 ```
 VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key-here

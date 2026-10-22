@@ -44,7 +44,7 @@ npm run preview      # Preview production build
 npx tsc --noEmit     # Type check only
 ```
 
-Vite is configured with `server: { host: '0.0.0.0' }` so the dev server is accessible on the LAN for mobile testing. The `.env` file (gitignored) contains `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY`.
+Vite is configured with `server: { host: '0.0.0.0' }` so the dev server is accessible on the LAN for mobile testing. The `.env` file (gitignored) contains `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` (keeps its name but holds the `sb_publishable_` key; legacy JWT anon keys are disabled). No Supabase service key, locally or on Vercel.
 
 ## File Structure
 
@@ -339,7 +339,7 @@ A sidebar checkbox (also in the mobile sync bar) swaps every data hook onto the 
 
 ## Deployment
 
-- **Not yet deployed to Vercel** — deployment was discussed but not completed this session
+- **Vercel**: project `stint-ledger`, env vars `VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY` (publishable key) and `ANTHROPIC_API_KEY`; no Supabase service key
 - **GitHub**: `homer31383/stint-ledger` (private)
 - **Remote**: `origin` -> `https://github.com/homer31383/stint-ledger.git`
 - **Branch**: `main`
