@@ -309,7 +309,7 @@ A sidebar checkbox (also in the mobile sync bar) swaps every data hook onto the 
 
 2. **IndexedDB empty state** — On a fresh device, all IDB reads return null. Every hook initializes with defaults and merges IDB data on top. `useExpenseModel` validates `recurring`/`oneTime` are arrays before using them.
 
-3. **RLS** — RLS is enabled on all tables with the `household_only` policy (`public.is_household()`), and anon has no grants. If tables are recreated, enable RLS, revoke anon and recreate `household_only` the same way (see `supabase/lockdown/2026-10-22_stint.sql` at the repo root).
+3. **RLS**: RLS is enabled on all tables with the `household_only` policy (`public.is_household()`), and anon has no grants. If tables are recreated, enable RLS, revoke anon and recreate `household_only` the same way (see `supabase/lockdown/2026-10-22_stint.sql` at the repo root).
 
 4. **Select styling** — Native `<select>` elements need explicit `bg-surface-2 text-gray-300` classes or they render white-on-white in dark theme.
 
