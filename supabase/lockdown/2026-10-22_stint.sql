@@ -1,5 +1,5 @@
 -- Stint + Stint Ledger household lockdown (2026-10-22).
--- WRITTEN, NOT APPLIED. Run by hand in the Supabase SQL Editor for project
+-- APPLIED 2026-10-22; do not re-run. Run by hand in the Supabase SQL Editor for project
 -- xxsjfeafpzzcmadyvuue, after Anyone Can Parent's household setup (part 1),
 -- which creates public.household_members and public.is_household().
 -- Rollback: 2026-10-22_stint_rollback.sql.

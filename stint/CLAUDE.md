@@ -117,7 +117,7 @@ Shared Supabase instance (`xxsjfeafpzzcmadyvuue`) with Axiom — **never touch n
 - `idx_stint_inv_status` on invoices(status)
 
 ### RLS
-All tables have RLS enabled. Policy: `auth.uid() is not null` for all operations.
+All tables have RLS enabled with one policy, `household_only`: for all to authenticated, using and with check `public.is_household()` (household members only). No anon grants. Applied 2026-10-22 by `supabase/lockdown/2026-10-22_stint.sql` at the repo root, which replaced the `auth.uid() is not null` policies.
 
 ### Migrations applied (do NOT re-run)
 1. `001_initial_schema.sql` — tables, indexes, RLS enable
@@ -125,6 +125,7 @@ All tables have RLS enabled. Policy: `auth.uid() is not null` for all operations
 3. `003_add_updated_at.sql` — updated_at column on all tables
 4. Manual: `ALTER TABLE stint_clients ADD COLUMN IF NOT EXISTS contacts jsonb default '[]';`
 5. Manual: `ALTER TABLE stint_invoices ADD COLUMN IF NOT EXISTS paid_date text;`
+6. `../supabase/lockdown/2026-10-22_stint.sql`: household lockdown (rollback alongside)
 6. Manual: `ALTER TABLE stint_pencils ADD COLUMN IF NOT EXISTS client_id text;`
 7. Manual: `ALTER TABLE stint_pencils ADD COLUMN IF NOT EXISTS rates jsonb;`
 8. `004_day_notes.sql` — `stint_day_notes` table for per-day notes on the Time tab

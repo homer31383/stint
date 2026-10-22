@@ -107,7 +107,7 @@ Vite is configured with `server: { host: '0.0.0.0' }` so the dev server is acces
 ```
 Supabase Auth (email/password login)
   ↓ session required
-Supabase (stint_* tables, RLS: authenticated only)
+Supabase (stint_* tables, RLS: household members only)
   ↓ fetchStintData()
 useStintData hook -> caches to IDB "stint" store
   ↓
@@ -155,12 +155,10 @@ Planner settings, expense model, saved scenarios, retirement settings — each m
 |-------|------|
 | `ledger_sync` | Single row (`id='default'`), `data` jsonb blob of all settings, `updated_at` timestamp |
 
-### RLS Policy (applied March 2026)
-All tables have RLS enabled with `TO authenticated` policies:
-- `stint_*` tables: `Authenticated read` — SELECT only for authenticated users
-- `ledger_sync`: `Authenticated read/write` — ALL operations for authenticated users
-- Old `Allow anon read` policies dropped
-- Both Stint and Stint Ledger use Supabase Auth, so authenticated-only works for both
+### RLS Policy (household lockdown, applied 2026-10-22)
+All `stint_*` tables and `ledger_sync` have RLS enabled with one policy, `household_only`: for all to authenticated, using and with check `public.is_household()` (household members only). No anon grants. SQL: `supabase/lockdown/2026-10-22_stint.sql` at the repo root (rollback alongside).
+- Replaced the March 2026 `Authenticated read` (stint_*) and `Authenticated read/write` (ledger_sync) policies and the migrations' `auth.uid() is not null` policies
+- Both Stint and Stint Ledger sign in with Supabase Auth as household members, so household-only works for both
 - Axiom (separate app on same Supabase instance) uses different tables, unaffected
 
 ## Supabase Auth Configuration
@@ -311,7 +309,7 @@ A sidebar checkbox (also in the mobile sync bar) swaps every data hook onto the 
 
 2. **IndexedDB empty state** — On a fresh device, all IDB reads return null. Every hook initializes with defaults and merges IDB data on top. `useExpenseModel` validates `recurring`/`oneTime` are arrays before using them.
 
-3. **RLS** — RLS is now enabled on all tables with `TO authenticated` policies. If tables are recreated, you must re-apply RLS policies (see SQL in disaster recovery doc).
+3. **RLS** — RLS is enabled on all tables with the `household_only` policy (`public.is_household()`), and anon has no grants. If tables are recreated, enable RLS, revoke anon and recreate `household_only` the same way (see `supabase/lockdown/2026-10-22_stint.sql` at the repo root).
 
 4. **Select styling** — Native `<select>` elements need explicit `bg-surface-2 text-gray-300` classes or they render white-on-white in dark theme.
 
