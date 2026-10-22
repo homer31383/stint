@@ -1,5 +1,7 @@
 # Stint — Disaster Recovery & Full Rebuild Guide
 
+> **Security (updated 2026-10-22):** grants below no longer include anon. Since the 2026-10-22 household lockdown (`supabase/lockdown/2026-10-22_stint.sql` at the repo root) each table has RLS on and one `household_only` policy for `authenticated` (`public.is_household()`), replacing the per-user policies shown here. Never grant anon or disable RLS.
+
 If you need to rebuild Stint from scratch, this document contains everything needed.
 
 ## 1. Clone & Install
@@ -34,7 +36,7 @@ create table if not exists stint_clients (
   service_rates jsonb default '{}',
   created_at bigint default (extract(epoch from now()) * 1000)
 );
-grant select, insert, update, delete on public.stint_clients to anon, authenticated, service_role;
+grant select, insert, update, delete on public.stint_clients to authenticated, service_role;
 
 create table if not exists stint_projects (
   id text primary key,
@@ -46,7 +48,7 @@ create table if not exists stint_projects (
   lead_3d text, lead_2d text, my_role text, due_date text, notes text,
   created_at bigint default (extract(epoch from now()) * 1000)
 );
-grant select, insert, update, delete on public.stint_projects to anon, authenticated, service_role;
+grant select, insert, update, delete on public.stint_projects to authenticated, service_role;
 
 create table if not exists stint_time_entries (
   id text primary key,
@@ -57,7 +59,7 @@ create table if not exists stint_time_entries (
   notes text,
   created_at bigint default (extract(epoch from now()) * 1000)
 );
-grant select, insert, update, delete on public.stint_time_entries to anon, authenticated, service_role;
+grant select, insert, update, delete on public.stint_time_entries to authenticated, service_role;
 
 create table if not exists stint_pencils (
   id text primary key,
@@ -66,7 +68,7 @@ create table if not exists stint_pencils (
   priority integer default 1, notes text,
   created_at bigint default (extract(epoch from now()) * 1000)
 );
-grant select, insert, update, delete on public.stint_pencils to anon, authenticated, service_role;
+grant select, insert, update, delete on public.stint_pencils to authenticated, service_role;
 
 create table if not exists stint_invoices (
   id text primary key, number text,
@@ -80,7 +82,7 @@ create table if not exists stint_invoices (
   date_range text, dates_worked jsonb default '[]',
   created_at bigint default (extract(epoch from now()) * 1000)
 );
-grant select, insert, update, delete on public.stint_invoices to anon, authenticated, service_role;
+grant select, insert, update, delete on public.stint_invoices to authenticated, service_role;
 
 create table if not exists stint_settings (
   id text primary key default 'default',
@@ -90,7 +92,7 @@ create table if not exists stint_settings (
   payment_terms integer default 30, hide_dollars boolean default true,
   service_rates jsonb default '{}'
 );
-grant select, insert, update, delete on public.stint_settings to anon, authenticated, service_role;
+grant select, insert, update, delete on public.stint_settings to authenticated, service_role;
 
 create index if not exists idx_stint_te_date on stint_time_entries(date);
 create index if not exists idx_stint_te_proj on stint_time_entries(project_id);
