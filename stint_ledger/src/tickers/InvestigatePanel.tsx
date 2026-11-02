@@ -27,7 +27,8 @@ export interface InvestigateAsset {
   pctLabel: string; // preformatted, e.g. "+2.34%"
 }
 
-export type InvestigateStatus = 'loading' | 'done' | 'error';
+// 'signin': no signed-in household session, so the server refused (or would refuse) the call.
+export type InvestigateStatus = 'loading' | 'done' | 'error' | 'signin';
 
 interface InvestigatePanelProps {
   assets: InvestigateAsset[];
@@ -214,6 +215,24 @@ export default function InvestigatePanel({
               <div className="text-sm italic" style={{ color: TEXT_DIM }} aria-live="polite">
                 {STATUS_LINES[lineIdx]}
               </div>
+            </div>
+          )}
+
+          {status === 'signin' && (
+            <div className="flex flex-col items-center gap-4 py-10 text-center">
+              <div className="text-sm" style={{ color: TEXT }}>
+                Investigate needs your Stint Ledger sign in.
+              </div>
+              <div className="text-xs italic px-4" style={{ color: TEXT_DIM }}>
+                Sign in there, then come back to /tickers. The rest of Tickers works without it.
+              </div>
+              <a
+                href="/"
+                className="rounded-full px-5 py-2 text-sm font-medium"
+                style={{ background: SEG_ACTIVE_BG, color: '#ffffff', boxShadow: SEG_ACTIVE_SHADOW }}
+              >
+                Sign in
+              </a>
             </div>
           )}
 

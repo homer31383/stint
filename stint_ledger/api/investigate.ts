@@ -5,7 +5,9 @@
 //
 // This is the tickers feature's first server-side secret: ANTHROPIC_API_KEY
 // lives only in the Vercel env (vercel env add ANTHROPIC_API_KEY production).
-// The client stays auth-free.
+// Because it spends that key, the caller must be a signed-in household
+// member (./_lib/household.ts: auth.getUser + is_household, publishable key
+// only). The page loads sign in only when Investigate is used.
 //
 // req/res are typed loosely on purpose, same as api/tickers.ts: this file
 // sits outside tsconfig's include and we avoid adding @vercel/node.
@@ -15,6 +17,7 @@ import {
   runInvestigation,
   extractErrorMessage,
 } from './_lib/investigate.js';
+import { requireHousehold } from './_lib/household.js';
 
 const WINDOW_MS = 60_000;
 const MAX_PER_WINDOW = 10;
@@ -41,6 +44,14 @@ export default async function handler(req: any, res: any) {
   if (req.method !== 'POST') {
     res.statusCode = 405;
     res.end(JSON.stringify({ error: 'POST only' }));
+    return;
+  }
+
+  const who = await requireHousehold(req.headers?.authorization);
+  if (!who.ok) {
+    res.statusCode = who.status;
+    res.setHeader('Cache-Control', 'no-store');
+    res.end(JSON.stringify({ error: who.error }));
     return;
   }
 
