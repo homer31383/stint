@@ -24,6 +24,12 @@ export const ZERO_LINE = '#d5dcc0';
 export const GAIN_TEXT = '#4a7a45';
 export const LOSS_TEXT = '#a5563c'; // clay, never red
 
+// Olinda tab: the "Paper trading" badge is warm amber, a tone used nowhere
+// else on the page, so paper figures can never pass for real holdings.
+export const PAPER_BADGE_BG = '#f6e9c8';
+export const PAPER_BADGE_TEXT = '#8a6418';
+export const PAPER_BADGE_BORDER = 'rgba(168,129,58,0.45)';
+
 // Segmented controls: the active segment is itself a small 3D object.
 export const SEG_BG = 'rgba(255,255,255,0.65)';
 export const SEG_SHADOW = 'inset 0 1px 3px rgba(58,68,48,0.08)';

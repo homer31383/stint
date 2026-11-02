@@ -1,7 +1,10 @@
-// Standalone market watch page at /tickers. Deliberately isolated: no
-// Supabase, no auth, no imports from the finance views or shared app
-// components, and the watchlist persists to localStorage only, never the
-// app's IndexedDB or sync layer. See src/main.tsx for the route branch.
+// Standalone market watch page at /tickers. Deliberately isolated: the
+// Tickers tab needs no sign in and loads no Supabase, there are no imports
+// from the finance views or shared app components, and the watchlist
+// persists to localStorage only, never the app's IndexedDB or sync layer.
+// The one exception is the Olinda tab (./OlindaTab.tsx), a lazy chunk that
+// reads the signed-in session only when opened. See src/main.tsx for the
+// route branch.
 //
 // Visual language: biophilic (moss, clay, sand) with 3D percent pills. All
 // colors and the intensity ramp live in ./theme.ts.
@@ -9,7 +12,7 @@
 // Kept dumb on purpose. TODO if ever wanted: auto refresh interval. Not
 // building it now.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { TickerSparkline, BAND } from './TickerSparkline';
 import InvestigatePanel, { type InvestigateAsset, type InvestigateStatus } from './InvestigatePanel';
 import {
@@ -30,9 +33,17 @@ import {
   SEG_SHADOW,
   SEG_ACTIVE_BG,
   SEG_ACTIVE_SHADOW,
+  PAPER_BADGE_BG,
+  PAPER_BADGE_TEXT,
+  PAPER_BADGE_BORDER,
   pillStyle,
   cardShadow,
 } from './theme';
+
+// The Olinda tab is its own lazy chunk: it is the only part of /tickers that
+// loads the Supabase client (to read the signed-in session), and it loads
+// only when the tab is opened.
+const OlindaTab = lazy(() => import('./OlindaTab'));
 
 const DEFAULT_WATCHLIST = [
   '^GSPC', '^DJI', '^IXIC', '^RUT',
@@ -47,6 +58,17 @@ const DEFAULT_WATCHLIST = [
 ];
 
 const STORAGE_KEY = 'tickers-watchlist';
+const TAB_STORAGE_KEY = 'tickers-tab';
+type Tab = 'tickers' | 'olinda';
+
+function loadTab(): Tab {
+  try {
+    if (localStorage.getItem(TAB_STORAGE_KEY) === 'olinda') return 'olinda';
+  } catch {
+    // fall through to default
+  }
+  return 'tickers';
+}
 const BAND_STORAGE_KEY = 'tickers-band';
 const BAND_OPTIONS = [1, 2, 3, 5, 10];
 
@@ -603,6 +625,52 @@ function segStyle(active: boolean): React.CSSProperties {
     : { color: TEXT_DIM };
 }
 
+// Tickers | Olinda switch. The Olinda segment always carries its PAPER
+// badge so the tab itself says these are not real holdings.
+function TabControl({ tab, onChange }: { tab: Tab; onChange: (t: Tab) => void }) {
+  return (
+    <div
+      className="inline-flex items-center gap-0.5 rounded-full p-0.5"
+      role="tablist"
+      aria-label="View"
+      style={{ background: SEG_BG, boxShadow: SEG_SHADOW }}
+    >
+      <button
+        role="tab"
+        aria-selected={tab === 'tickers'}
+        onClick={() => onChange('tickers')}
+        className="rounded-full px-3 py-1 text-xs font-medium"
+        style={segStyle(tab === 'tickers')}
+      >
+        Tickers
+      </button>
+      <button
+        role="tab"
+        aria-selected={tab === 'olinda'}
+        onClick={() => onChange('olinda')}
+        className="rounded-full px-3 py-1 text-xs font-medium inline-flex items-center gap-1.5"
+        style={segStyle(tab === 'olinda')}
+      >
+        Olinda
+        <span
+          className="rounded-full font-semibold uppercase"
+          style={{
+            background: PAPER_BADGE_BG,
+            color: PAPER_BADGE_TEXT,
+            border: `1px solid ${PAPER_BADGE_BORDER}`,
+            fontSize: 8.5,
+            letterSpacing: '0.12em',
+            padding: '0 5px',
+            lineHeight: '14px',
+          }}
+        >
+          Paper
+        </span>
+      </button>
+    </div>
+  );
+}
+
 // Compact timeframe selector, same visual language as the band control.
 function TimeframeControl({ timeframe, onChange }: { timeframe: Timeframe; onChange: (t: Timeframe) => void }) {
   return (
@@ -750,6 +818,7 @@ export default function TickersPage() {
   useTickersHead();
 
   const [watchlist, setWatchlist] = useState<string[]>(loadWatchlist);
+  const [tab, setTab] = useState<Tab>(loadTab);
   const [band, setBand] = useState<number>(loadBand);
   // Deliberately not persisted: the app always opens on today (1D); other
   // timeframes are temporary excursions within a session.
@@ -955,6 +1024,20 @@ export default function TickersPage() {
     setSelectedSymbols([]);
   }, []);
 
+  // Remembered per device. Leaving the Tickers tab drops edit and select
+  // mode so nothing half-finished is waiting on return.
+  const switchTab = useCallback((next: Tab) => {
+    setTab(next);
+    setEditMode(false);
+    setSelectMode(false);
+    setSelectedSymbols([]);
+    try {
+      localStorage.setItem(TAB_STORAGE_KEY, next);
+    } catch {
+      // storage unavailable: the tab just is not remembered
+    }
+  }, []);
+
   const startCooldown = useCallback(() => {
     setCooldown(true);
     if (cooldownTimer.current != null) window.clearTimeout(cooldownTimer.current);
@@ -1091,7 +1174,7 @@ export default function TickersPage() {
               </span>
               Tickers
             </h1>
-            <button
+            {tab === 'tickers' && <button
               className="rounded-full text-xs font-medium"
               style={{
                 background: ACCENT_BG,
@@ -1105,24 +1188,32 @@ export default function TickersPage() {
               }}
             >
               {editMode ? 'Done' : 'Edit'}
-            </button>
+            </button>}
           </div>
-          <div className="flex flex-wrap items-center justify-between gap-y-1.5">
+          <div className="mb-2">
+            <TabControl tab={tab} onChange={switchTab} />
+          </div>
+          {tab === 'tickers' && <div className="flex flex-wrap items-center justify-between gap-y-1.5">
             <TimeframeControl timeframe={timeframe} onChange={setTimeframe} />
             {/* The band only applies to the fixed-scale 1D view. */}
             {is1D && <BandControl band={band} onChange={updateBand} />}
-          </div>
-          {!editMode && headerLabel && (
+          </div>}
+          {tab === 'tickers' && !editMode && headerLabel && (
             <div className="text-xs italic mt-2 px-1" style={{ color: TEXT_DIM }}>{headerLabel}</div>
           )}
         </div>
-        {!editMode && error && !loadedOnce && (
+        {tab === 'olinda' ? (
+          <Suspense fallback={<div className="text-xs italic mt-3 px-1" style={{ color: TEXT_DIM }}>Loading Olinda...</div>}>
+            <OlindaTab />
+          </Suspense>
+        ) : null}
+        {tab === 'tickers' && !editMode && error && !loadedOnce && (
           <div className="text-sm italic py-6" style={{ color: LOSS_TEXT }}>
             Could not load prices ({error}). Reopen to retry.
           </div>
         )}
 
-        {editMode ? (
+        {tab === 'olinda' ? null : editMode ? (
           <div>
             <div className="flex gap-2 py-3">
               <input
@@ -1173,7 +1264,7 @@ export default function TickersPage() {
       </div>
 
       {/* Floating action bar for select mode. */}
-      {selectMode && (
+      {tab === 'tickers' && selectMode && (
         <div className="fixed bottom-0 left-0 right-0 z-20 px-4 pb-5 pointer-events-none">
           <div
             className="pointer-events-auto mx-auto flex w-fit items-center gap-1.5 rounded-full p-1.5"
