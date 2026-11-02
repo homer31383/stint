@@ -102,6 +102,8 @@ const TIMEFRAME_PHRASES: Record<Timeframe, string> = {
 
 const MAX_INVESTIGATE = 4;
 
+class SignInNeeded extends Error {}
+
 const PERIOD_LABELS: Record<Timeframe, string | null> = {
   '1D': null, // 1D uses the market open/closed label instead
   '1W': 'Past week',
@@ -1052,25 +1054,39 @@ export default function TickersPage() {
     (assets: InvestigateAsset[], tf: Timeframe) => {
       setInvestigation({ assets, timeframe: tf, status: 'loading' });
       startCooldown();
-      fetch('/api/investigate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          tickers: assets.map((a) => ({
-            symbol: a.symbol,
-            name: a.name,
-            changePercent: a.pctLabel,
-            timeframe: TIMEFRAME_PHRASES[tf],
-          })),
-        }),
-      })
+      // Investigate requires a signed-in household caller. The Supabase
+      // client is imported here, on first use, so the rest of /tickers
+      // never loads it.
+      import('../lib/supabase')
+        .then(({ supabase }) => supabase.auth.getSession())
+        .then(({ data }) => {
+          const token = data.session?.access_token;
+          if (!token) throw new SignInNeeded();
+          return fetch('/api/investigate', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+            body: JSON.stringify({
+              tickers: assets.map((a) => ({
+                symbol: a.symbol,
+                name: a.name,
+                changePercent: a.pctLabel,
+                timeframe: TIMEFRAME_PHRASES[tf],
+              })),
+            }),
+          });
+        })
         .then(async (res) => {
+          if (res.status === 401) throw new SignInNeeded(); // 403 (signed in, not household) falls through to the error text
           const json = await res.json().catch(() => null);
           if (!res.ok) throw new Error(json?.error || `HTTP ${res.status}`);
           if (typeof json?.analysis !== 'string') throw new Error('unexpected response shape');
           setInvestigation((cur) => (cur ? { ...cur, status: 'done', text: json.analysis } : cur));
         })
         .catch((e) => {
+          if (e instanceof SignInNeeded) {
+            setInvestigation((cur) => (cur ? { ...cur, status: 'signin' } : cur));
+            return;
+          }
           setInvestigation((cur) =>
             cur ? { ...cur, status: 'error', error: e instanceof Error ? e.message : String(e) } : cur,
           );
