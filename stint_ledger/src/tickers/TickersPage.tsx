@@ -1,10 +1,11 @@
-// Standalone market watch page at /tickers. Deliberately isolated: the
-// Tickers tab needs no sign in and loads no Supabase, there are no imports
-// from the finance views or shared app components, and the watchlist
-// persists to localStorage only, never the app's IndexedDB or sync layer.
-// The one exception is the Olinda tab (./OlindaTab.tsx), a lazy chunk that
-// reads the signed-in session only when opened. See src/main.tsx for the
-// route branch.
+// Standalone market watch page at /tickers. Deliberately isolated: prices
+// need no sign in and the page loads no Supabase up front, there are no
+// imports from the finance views or shared app components, and the
+// watchlist persists to localStorage only, never the app's IndexedDB or
+// sync layer. Two exceptions read the signed-in session, each loading the
+// Supabase client only when used: the Olinda tab (./OlindaTab.tsx, a lazy
+// chunk) and Investigate, which spends the Anthropic key and so needs a
+// signed-in household caller. See src/main.tsx for the route branch.
 //
 // Visual language: biophilic (moss, clay, sand) with 3D percent pills. All
 // colors and the intensity ramp live in ./theme.ts.
