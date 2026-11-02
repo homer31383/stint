@@ -15,6 +15,7 @@
 
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import { TickerSparkline, BAND } from './TickerSparkline';
+import { changeFor, type TickerRow } from './change';
 import InvestigatePanel, { type InvestigateAsset, type InvestigateStatus } from './InvestigatePanel';
 import {
   PAGE_BG,
@@ -114,35 +115,6 @@ const PERIOD_LABELS: Record<Timeframe, string | null> = {
   '5Y': 'Past 5 years',
   All: 'All time',
 };
-
-// Change over the selected timeframe. On 1D the reference is the previous
-// close; on longer ranges it is the first close in the period, so the
-// percent change is (last - first) / first.
-function changeFor(row: TickerRow, is1D: boolean): { pct: number; series: number[]; ref: number } | null {
-  if (!row.ok || row.price == null) return null;
-  const closes = row.closes ?? [];
-  const ref = is1D ? row.prevClose : closes.length > 0 ? closes[0] : null;
-  if (ref == null || ref <= 0) return null;
-  return {
-    pct: ((row.price - ref) / ref) * 100,
-    series: closes.map((c) => ((c - ref) / ref) * 100),
-    ref,
-  };
-}
-
-interface TickerRow {
-  symbol: string;
-  ok: boolean;
-  price?: number;
-  prevClose?: number;
-  closes?: number[];
-  name?: string;
-  marketState?: string;
-  asOf?: number;
-  afterHoursPrice?: number;
-  afterHoursPct?: number;
-  error?: string;
-}
 
 function isIndexSymbol(s: string): boolean {
   return s.startsWith('^');
@@ -1210,18 +1182,19 @@ export default function TickersPage() {
           <div className="mb-2">
             <TabControl tab={tab} onChange={switchTab} />
           </div>
-          {tab === 'tickers' && <div className="flex flex-wrap items-center justify-between gap-y-1.5">
+          <div className="flex flex-wrap items-center justify-between gap-y-1.5">
+            {/* Both tabs share the timeframe: on Olinda it sets the range % pill. */}
             <TimeframeControl timeframe={timeframe} onChange={setTimeframe} />
-            {/* The band only applies to the fixed-scale 1D view. */}
-            {is1D && <BandControl band={band} onChange={updateBand} />}
-          </div>}
+            {/* The band only applies to the fixed-scale 1D view of the watchlist. */}
+            {tab === 'tickers' && is1D && <BandControl band={band} onChange={updateBand} />}
+          </div>
           {tab === 'tickers' && !editMode && headerLabel && (
             <div className="text-xs italic mt-2 px-1" style={{ color: TEXT_DIM }}>{headerLabel}</div>
           )}
         </div>
         {tab === 'olinda' ? (
           <Suspense fallback={<div className="text-xs italic mt-3 px-1" style={{ color: TEXT_DIM }}>Loading Olinda...</div>}>
-            <OlindaTab />
+            <OlindaTab timeframe={timeframe} periodLabel={PERIOD_LABELS[timeframe] ?? 'Today'} band={band} />
           </Suspense>
         ) : null}
         {tab === 'tickers' && !editMode && error && !loadedOnce && (

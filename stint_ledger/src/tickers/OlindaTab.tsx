@@ -6,6 +6,7 @@
 
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
+import { changeFor, type TickerRow } from './change';
 import type { OlindaFeed, OlindaHolding } from '../../api/_lib/olindaFeed';
 import {
   CARD_BG,
@@ -29,7 +30,10 @@ import {
 
 const OLINDA_URL = 'https://olinda-one.vercel.app';
 const SERIF = "'Fraunces', Georgia, 'Times New Roman', serif";
-const PILL_SCALE = 25; // color ramp denominator: a 25% move (the strikeout) reads strong
+const PILL_SCALE = 25; // since-start pill: a 25% move (the strikeout) reads strong
+
+// Olinda tickers use a dot for share classes (BRK.B); Yahoo uses a dash.
+const yahooSymbol = (ticker: string) => ticker.replace(/\./g, '-');
 
 type State =
   | { kind: 'loading' }
@@ -102,33 +106,41 @@ function stopText(h: OlindaHolding): string {
   return `stop ${usd(h.stop_price)}${rule}`;
 }
 
-function HoldingRow({ h, last }: { h: OlindaHolding; last: boolean }) {
+function HoldingRow({ h, range, scale, last }: { h: OlindaHolding; range: number | null | undefined; scale: number; last: boolean }) {
   return (
     <div className="py-2.5" style={{ borderBottom: last ? 'none' : `1px solid ${CARD_BORDER}` }}>
       <div className="flex items-center justify-between gap-3">
-        <span style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 17, color: TEXT }}>{h.ticker}</span>
-        <span className="flex items-center gap-2 shrink-0">
-          <span className="font-mono text-sm" style={{ color: TEXT }}>
-            {h.market_value === null ? '-' : usd(h.market_value)}
-          </span>
-          {h.gain_pct !== null && (
-            <span className="rounded-full font-mono text-xs font-semibold px-2 py-0.5" style={pillStyle(h.gain_pct, PILL_SCALE, false)}>
-              {signedPct(h.gain_pct)}
-            </span>
-          )}
+        <span className="flex items-center gap-2 min-w-0">
+          <span style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 17, color: TEXT }}>{h.ticker}</span>
+          <GradeChip grade={h.thesis_grade} />
         </span>
+        {/* Primary number, like the Tickers tab: % over the selected range. */}
+        {range === undefined ? (
+          <span className="font-mono text-xs" style={{ color: STONE }}>...</span>
+        ) : range === null ? (
+          <span className="font-mono text-xs" style={{ color: STONE }}>-</span>
+        ) : (
+          <span className="shrink-0 rounded-full font-mono text-xs font-semibold px-2 py-0.5" style={pillStyle(range, scale, false)}>
+            {signedPct(range)}
+          </span>
+        )}
       </div>
       <div className="flex items-center justify-between gap-3 font-mono mt-0.5" style={{ fontSize: 11, color: TEXT_DIM }}>
         <span className="min-w-0 truncate">
           {shares(h.shares)} sh · cost {usd(h.cost_basis)}
         </span>
-        <span className="shrink-0" style={{ color: signColor(h.gain_usd) }}>
-          {h.gain_usd === null ? '' : `${h.gain_usd >= 0 ? '+' : ''}${usd(h.gain_usd)}`}
+        <span className="shrink-0" style={{ color: TEXT }}>
+          {h.market_value === null ? '-' : usd(h.market_value)}
         </span>
       </div>
-      <div className="flex items-center justify-between gap-3 font-mono mt-1" style={{ fontSize: 11, color: TEXT_DIM }}>
+      <div className="flex flex-wrap items-center justify-between gap-x-3 font-mono mt-0.5" style={{ fontSize: 11, color: TEXT_DIM }}>
         <span className="min-w-0 truncate">{stopText(h)}</span>
-        <GradeChip grade={h.thesis_grade} />
+        {h.gain_pct !== null && (
+          <span className="shrink-0" style={{ color: signColor(h.gain_pct) }}>
+            {signedPct(h.gain_pct)}
+            {h.gain_usd !== null ? ` (${h.gain_usd >= 0 ? '+' : ''}${usd(h.gain_usd)})` : ''} entry
+          </span>
+        )}
       </div>
     </div>
   );
@@ -146,8 +158,20 @@ function Message({ title, body, action }: { title: string; body: string; action?
 
 const primaryButton: React.CSSProperties = { background: SEG_ACTIVE_BG, color: '#ffffff', boxShadow: SEG_ACTIVE_SHADOW };
 
-export default function OlindaTab() {
+interface OlindaTabProps {
+  timeframe: string; // a TickersPage timeframe key, sent to /api/tickers as ?range=
+  periodLabel: string; // e.g. "Past week"
+  band: number; // the 1D color band, shared with the Tickers tab
+}
+
+export default function OlindaTab({ timeframe, periodLabel, band }: OlindaTabProps) {
   const [state, setState] = useState<State>({ kind: 'loading' });
+  // Range prices from /api/tickers (Yahoo), keyed by Olinda ticker. Holdings
+  // with no entry yet render a placeholder; a failed fetch renders "-".
+  const [prices, setPrices] = useState<{ key: string; rows: Record<string, TickerRow> } | null>(null);
+  const [pricesFailed, setPricesFailed] = useState(false);
+  const tickers = state.kind === 'ok' ? state.feed.holdings.map((h) => h.ticker) : [];
+  const tickersKey = tickers.join(',');
 
   const load = useCallback(async () => {
     try {
@@ -168,6 +192,34 @@ export default function OlindaTab() {
       setState({ kind: 'unavailable' });
     }
   }, []);
+
+  // Range prices: refetched when the holdings or the timeframe change.
+  // /api/tickers caches for 60s, so tab switching stays cheap.
+  useEffect(() => {
+    if (!tickersKey) return;
+    const key = `${timeframe}|${tickersKey}`;
+    let cancelled = false;
+    setPricesFailed(false);
+    const symbols = tickersKey.split(',').map(yahooSymbol).join(',');
+    fetch(`/api/tickers?symbols=${encodeURIComponent(symbols)}&range=${encodeURIComponent(timeframe)}`)
+      .then((res) => (res.ok ? res.json() : Promise.reject(new Error(`HTTP ${res.status}`))))
+      .then((json: { tickers?: TickerRow[] }) => {
+        if (cancelled) return;
+        const bySymbol = new Map((json.tickers ?? []).map((r) => [r.symbol, r]));
+        const rows: Record<string, TickerRow> = {};
+        for (const t of tickersKey.split(',')) {
+          const r = bySymbol.get(yahooSymbol(t));
+          if (r) rows[t] = r;
+        }
+        setPrices({ key, rows });
+      })
+      .catch(() => {
+        if (!cancelled) setPricesFailed(true);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [timeframe, tickersKey]);
 
   useEffect(() => {
     load();
@@ -212,6 +264,25 @@ export default function OlindaTab() {
   }
 
   const { feed } = state;
+  const is1D = timeframe === '1D';
+  const current = prices && prices.key === `${timeframe}|${tickersKey}` ? prices.rows : null;
+  // undefined = still loading, null = no figure for this holding.
+  const rangeFor = (ticker: string): number | null | undefined => {
+    if (pricesFailed) return null;
+    if (!current) return undefined;
+    const r = current[ticker];
+    return r ? changeFor(r, is1D)?.pct ?? null : null;
+  };
+  // Same color rule as the Tickers tab: the band on 1D, the biggest mover otherwise.
+  let rangeScale = band;
+  if (!is1D && current) {
+    let maxAbs = 0;
+    for (const t of tickers) {
+      const v = rangeFor(t);
+      if (typeof v === 'number') maxAbs = Math.max(maxAbs, Math.abs(v));
+    }
+    rangeScale = Math.max(maxAbs, 0.01);
+  }
   const asOf = feed.as_of
     ? new Date(feed.as_of).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
     : null;
@@ -246,14 +317,24 @@ export default function OlindaTab() {
         <span className="uppercase" style={{ color: TEXT_DIM, fontSize: 10, letterSpacing: '0.14em' }}>
           Paper holdings · {feed.holdings.length}
         </span>
-        <PaperBadge />
+        <span className="flex items-center gap-2">
+          <span className="text-xs italic" style={{ color: TEXT_DIM }}>{periodLabel}</span>
+          <PaperBadge />
+        </span>
       </div>
       <div className="px-4" style={cardStyle}>
         {feed.holdings.length === 0 ? (
           <div className="py-5 text-sm italic text-center" style={{ color: TEXT_DIM }}>No open positions.</div>
         ) : (
-          feed.holdings.map((h, i) => <HoldingRow key={h.ticker} h={h} last={i === feed.holdings.length - 1} />)
+          feed.holdings.map((h, i) => (
+            <HoldingRow key={h.ticker} h={h} range={rangeFor(h.ticker)} scale={rangeScale} last={i === feed.holdings.length - 1} />
+          ))
         )}
+      </div>
+
+      <div className="text-xs italic mt-2 px-1" style={{ color: TEXT_DIM }}>
+        Pill: {periodLabel}, the stock&apos;s own move (Yahoo prices{pricesFailed ? ', unavailable right now' : ''}).
+        Entry: Olinda&apos;s gain since it bought.
       </div>
 
       <div className="text-center mt-4">
