@@ -22,7 +22,16 @@ export interface OlindaFeed {
   return_since_start_pct: number | null;
   olinda_minus_spy_pts: number | null;
   holdings: OlindaHolding[];
+  sweep: OlindaSweep | null; // the IWO cash sweep; null if Olinda's broker did not answer
+  cash_usd: number | null;
 }
+
+export interface OlindaSweep {
+  ticker: string;
+  shares: number;
+}
+
+const TICKER_RE = /^[A-Z0-9.\-]{1,12}$/;
 
 const numOrNull = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const oneOf = <T extends string>(v: unknown, allowed: readonly T[]): T | null =>
@@ -39,7 +48,7 @@ export function pickFeed(body: unknown): OlindaFeed | null {
     const h = raw as Record<string, unknown>;
     const shares = numOrNull(h.shares);
     const cost = numOrNull(h.cost_basis);
-    if (typeof h.ticker !== 'string' || !/^[A-Z0-9.\-]{1,12}$/.test(h.ticker) || shares === null || cost === null) continue;
+    if (typeof h.ticker !== 'string' || !TICKER_RE.test(h.ticker) || shares === null || cost === null) continue;
     holdings.push({
       ticker: h.ticker,
       shares,
@@ -60,5 +69,16 @@ export function pickFeed(body: unknown): OlindaFeed | null {
     return_since_start_pct: numOrNull(b.return_since_start_pct),
     olinda_minus_spy_pts: numOrNull(b.olinda_minus_spy_pts),
     holdings,
+    sweep: pickSweep(b.sweep),
+    cash_usd: numOrNull(b.cash_usd),
   };
+}
+
+/** The sweep as { ticker, shares } only, or null if it is missing or malformed. */
+function pickSweep(raw: unknown): OlindaSweep | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const s = raw as Record<string, unknown>;
+  const shares = numOrNull(s.shares);
+  if (typeof s.ticker !== 'string' || !TICKER_RE.test(s.ticker) || shares === null || shares < 0) return null;
+  return { ticker: s.ticker, shares };
 }

@@ -13,6 +13,7 @@ export interface TickerRow {
   asOf?: number;
   afterHoursPrice?: number;
   afterHoursPct?: number;
+  sessionStart?: number;
   error?: string;
 }
 

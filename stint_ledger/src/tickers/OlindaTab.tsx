@@ -7,6 +7,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { changeFor, type TickerRow } from './change';
+import { dayTotal, needsDaily, sessionLabel, sessionMove, type SessionMove } from './dayChange';
 import type { OlindaFeed, OlindaHolding } from '../../api/_lib/olindaFeed';
 import {
   CARD_BG,
@@ -47,6 +48,29 @@ const usd = (v: number, digits = 2) =>
 const signedPct = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(2)}%`;
 const signedPts = (v: number) => `${v >= 0 ? '+' : ''}${v.toFixed(1)} pts`;
 const signColor = (v: number | null) => (v === null || v === 0 ? TEXT_DIM : v > 0 ? GAIN_TEXT : LOSS_TEXT);
+const signedUsd = (v: number, digits = 2) => `${v >= 0 ? '+' : '-'}${usd(Math.abs(v), digits)}`;
+
+// A position's day move: undefined = still loading, null = no figure.
+type DayMove = SessionMove | null | undefined;
+
+async function fetchRows(symbols: string[], range: string): Promise<Map<string, TickerRow>> {
+  const res = await fetch(`/api/tickers?symbols=${encodeURIComponent(symbols.join(','))}&range=${encodeURIComponent(range)}`);
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+  const json = (await res.json()) as { tickers?: TickerRow[] };
+  return new Map((json.tickers ?? []).map((r) => [r.symbol, r]));
+}
+
+function DayFigure({ move, shares, now }: { move: DayMove; shares: number; now: number }) {
+  if (move === undefined) return <span style={{ color: STONE }}>today ...</span>;
+  if (move === null) return <span style={{ color: STONE }}>today -</span>;
+  const v = shares * move.perShare;
+  const label = sessionLabel(move.date, now);
+  return (
+    <span style={{ color: signColor(v) }} title={`Move since the previous close, session of ${move.date}`}>
+      {label === 'Today' ? 'today' : label} {signedUsd(v)}
+    </span>
+  );
+}
 const shares = (v: number) => v.toLocaleString('en-US', { maximumFractionDigits: 4 });
 
 const cardStyle: React.CSSProperties = {
@@ -106,7 +130,7 @@ function stopText(h: OlindaHolding): string {
   return `stop ${usd(h.stop_price)}${rule}`;
 }
 
-function HoldingRow({ h, range, scale, last }: { h: OlindaHolding; range: number | null | undefined; scale: number; last: boolean }) {
+function HoldingRow({ h, range, scale, last, day, now }: { h: OlindaHolding; range: number | null | undefined; scale: number; last: boolean; day: DayMove; now: number }) {
   return (
     <div className="py-2.5" style={{ borderBottom: last ? 'none' : `1px solid ${CARD_BORDER}` }}>
       <div className="flex items-center justify-between gap-3">
@@ -129,8 +153,9 @@ function HoldingRow({ h, range, scale, last }: { h: OlindaHolding; range: number
         <span className="min-w-0 truncate">
           {shares(h.shares)} sh · cost {usd(h.cost_basis)}
         </span>
-        <span className="shrink-0" style={{ color: TEXT }}>
-          {h.market_value === null ? '-' : usd(h.market_value)}
+        <span className="shrink-0">
+          <DayFigure move={day} shares={h.shares} now={now} />
+          <span style={{ color: TEXT }}> · {h.market_value === null ? '-' : usd(h.market_value)}</span>
         </span>
       </div>
       <div className="flex flex-wrap items-center justify-between gap-x-3 font-mono mt-0.5" style={{ fontSize: 11, color: TEXT_DIM }}>
@@ -172,6 +197,14 @@ export default function OlindaTab({ timeframe, periodLabel, band }: OlindaTabPro
   const [pricesFailed, setPricesFailed] = useState(false);
   const tickers = state.kind === 'ok' ? state.feed.holdings.map((h) => h.ticker) : [];
   const tickersKey = tickers.join(',');
+  // Day change: 1D quotes for the holdings plus the sweep, whatever the
+  // timeframe (a longer range's reference is the period start, not the
+  // previous close). Refetched on every feed load so it follows the day.
+  const [feedLoads, setFeedLoads] = useState(0);
+  const sweepTicker = state.kind === 'ok' && state.feed.sweep && state.feed.sweep.shares > 0 ? state.feed.sweep.ticker : null;
+  const dayKey = [...tickers, ...(sweepTicker ? [sweepTicker] : [])].join(',');
+  const [day, setDay] = useState<{ key: string; moves: Record<string, SessionMove | null> } | null>(null);
+  const [dayFailed, setDayFailed] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -188,6 +221,7 @@ export default function OlindaTab({ timeframe, periodLabel, band }: OlindaTabPro
       const feed = (await res.json()) as OlindaFeed;
       if (feed?.paper !== true || !Array.isArray(feed.holdings)) return setState({ kind: 'unavailable' });
       setState({ kind: 'ok', feed });
+      setFeedLoads((n) => n + 1);
     } catch {
       setState({ kind: 'unavailable' });
     }
@@ -220,6 +254,32 @@ export default function OlindaTab({ timeframe, periodLabel, band }: OlindaTabPro
       cancelled = true;
     };
   }, [timeframe, tickersKey]);
+
+  // Day moves. Rows whose session has not opened yet (before the open,
+  // overnight, weekends) are priced from daily closes so they show the last
+  // session's move instead of $0.
+  useEffect(() => {
+    if (!dayKey) return;
+    let cancelled = false;
+    setDayFailed(false);
+    const olinda = dayKey.split(',');
+    (async () => {
+      const rows = await fetchRows(olinda.map(yahooSymbol), '1D');
+      const stale = olinda.filter((t) => {
+        const r = rows.get(yahooSymbol(t));
+        return r ? needsDaily(r) : false;
+      });
+      const daily = stale.length ? await fetchRows(stale.map(yahooSymbol), '1M').catch(() => new Map<string, TickerRow>()) : new Map<string, TickerRow>();
+      const moves: Record<string, SessionMove | null> = {};
+      for (const t of olinda) moves[t] = sessionMove(rows.get(yahooSymbol(t)), daily.get(yahooSymbol(t)));
+      if (!cancelled) setDay({ key: dayKey, moves });
+    })().catch(() => {
+      if (!cancelled) setDayFailed(true);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [dayKey, feedLoads]);
 
   useEffect(() => {
     load();
@@ -286,6 +346,12 @@ export default function OlindaTab({ timeframe, periodLabel, band }: OlindaTabPro
   const asOf = feed.as_of
     ? new Date(feed.as_of).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })
     : null;
+  const now = Date.now();
+  const dayMoves = day && day.key === dayKey ? day.moves : null;
+  const dayFor = (ticker: string): DayMove => (dayFailed ? null : dayMoves ? dayMoves[ticker] ?? null : undefined);
+  const total = dayMoves ? dayTotal(feed, dayMoves) : null;
+  const totalLabel = total ? sessionLabel(total.date, now) : 'Today';
+  const sweepMove = sweepTicker ? dayFor(sweepTicker) : null;
 
   return (
     <div className="mt-3">
@@ -295,8 +361,38 @@ export default function OlindaTab({ timeframe, periodLabel, band }: OlindaTabPro
 
       <div className="px-5 py-4" style={cardStyle}>
         <div className="uppercase" style={{ color: TEXT_DIM, fontSize: 10, letterSpacing: '0.14em' }}>Paper pot value</div>
-        <div style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 34, lineHeight: 1.15, color: TEXT }}>
-          {feed.pot_value === null ? '-' : usd(feed.pot_value, 0)}
+        <div className="flex flex-wrap items-baseline gap-x-3 gap-y-0.5">
+          <span style={{ fontFamily: SERIF, fontWeight: 600, fontSize: 34, lineHeight: 1.15, color: TEXT }}>
+            {feed.pot_value === null ? '-' : usd(feed.pot_value, 0)}
+          </span>
+          {/* The day's move of the whole pot: holdings plus the IWO sweep; cash does not move. */}
+          {dayFailed || (dayMoves && !total) ? (
+            <span className="font-mono text-sm" style={{ color: STONE }}>Today: unavailable</span>
+          ) : !total ? (
+            <span className="font-mono text-sm" style={{ color: STONE }}>{dayKey ? 'Today: ...' : 'Today: no positions'}</span>
+          ) : (
+            <span className="font-mono text-sm font-semibold" style={{ color: signColor(total.change) }} title={`Session of ${total.date}`}>
+              {totalLabel}: {signedUsd(total.change, 0)}
+              {total.pctOfPot !== null ? ` (${signedPct(total.pctOfPot)} of pot)` : ''}
+              {total.missing > 0 ? <span className="font-normal" style={{ color: STONE }}> · {total.missing} not priced</span> : null}
+            </span>
+          )}
+        </div>
+        <div className="font-mono mt-0.5" style={{ fontSize: 11, color: TEXT_DIM }}>
+          {feed.sweep ? (
+            <>
+              {feed.sweep.ticker} cash sweep {shares(feed.sweep.shares)} sh
+              {sweepTicker ? (
+                <>
+                  {' · '}
+                  <DayFigure move={sweepMove} shares={feed.sweep.shares} now={now} />
+                </>
+              ) : null}
+            </>
+          ) : (
+            'Cash sweep not reported'
+          )}
+          {feed.cash_usd !== null ? ` · cash ${usd(feed.cash_usd)}` : ''}
         </div>
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1 mt-1.5">
           {feed.return_since_start_pct !== null && (
@@ -327,13 +423,14 @@ export default function OlindaTab({ timeframe, periodLabel, band }: OlindaTabPro
           <div className="py-5 text-sm italic text-center" style={{ color: TEXT_DIM }}>No open positions.</div>
         ) : (
           feed.holdings.map((h, i) => (
-            <HoldingRow key={h.ticker} h={h} range={rangeFor(h.ticker)} scale={rangeScale} last={i === feed.holdings.length - 1} />
+            <HoldingRow key={h.ticker} h={h} range={rangeFor(h.ticker)} scale={rangeScale} last={i === feed.holdings.length - 1} day={dayFor(h.ticker)} now={now} />
           ))
         )}
       </div>
 
       <div className="text-xs italic mt-2 px-1" style={{ color: TEXT_DIM }}>
         Pill: {periodLabel}, the stock&apos;s own move (Yahoo prices{pricesFailed ? ', unavailable right now' : ''}).
+        Today: dollars made or lost since the previous close (shares x price move); before the open and on weekends, the last session, labelled with its day.
         Entry: Olinda&apos;s gain since it bought.
       </div>
 

@@ -15,6 +15,7 @@ export interface TickerRow {
   asOf?: number; // epoch seconds of the last regular market trade
   afterHoursPrice?: number; // last post market bar, 1D only
   afterHoursPct?: number; // percent change of that bar vs the regular close
+  sessionStart?: number; // 1D only: epoch seconds of the regular session the chart covers (after asOf = not opened yet)
   error?: string;
 }
 
@@ -122,6 +123,7 @@ async function fetchOne(symbol: string, rangeKey: RangeKey): Promise<TickerRow> 
       asOf: num(meta?.regularMarketTime) ?? undefined,
       afterHoursPrice,
       afterHoursPct,
+      sessionStart: rangeKey === '1D' && regStart != null ? regStart : undefined,
     };
   } catch (e) {
     return { symbol, ok: false, error: e instanceof Error ? e.message : String(e) };
